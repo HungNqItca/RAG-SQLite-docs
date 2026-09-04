@@ -200,7 +200,7 @@ Hệ thống hỗ trợ **3 provider LLM**, chuyển đổi qua key `llm.provide
 
 ![Hình 5.1a - Sequence diagram giai đoạn 1-3: Tiếp nhận → Phân loại → Query Pipeline](../png/hinh_5_1a_sequence_giai_doan_1_3.png)
 
-*Hình 5.1a - Ba giai đoạn đầu: tiếp nhận (xác thực JWT, rate limit, session), phân loại câu hỏi (ContentTypeClassifier 8 rules), Query Pipeline 4 tầng (Tầng A slot detection, B clarification, B.5 MongoDB direct fetch, C contextual condense).*
+*Hình 5.1a - Ba giai đoạn đầu: tiếp nhận (xác thực JWT, rate limit, session), phân loại câu hỏi (ContentTypeClassifier 11 rules), Query Pipeline 4 tầng (Tầng A slot detection, B clarification, B.5 MongoDB direct fetch, C contextual condense).*
 
 ![Hình 5.1b - Sequence diagram giai đoạn 4-6: Retrieval → LLM stream → Lưu lịch sử](../png/hinh_5_1b_sequence_giai_doan_4_6.png)
 
@@ -225,7 +225,7 @@ Nếu đã có `session_id`, BFF gọi `is_owner(user_id, session_id)` từ `Ses
 
 ### 5.2 Giai đoạn 2 - Phân loại câu hỏi (bước 10–11)
 
-Sau khi BFF forward sang RAG Core, bước đầu tiên là `ContentTypeClassifier.classify()` - hàm rule-based hoàn toàn, **không gọi LLM**, độ trễ ~0ms. Classifier có 8 rule theo thứ tự ưu tiên, first-match-wins, fallback về `'legal'` khi không rule nào khớp (đảm bảo zero regression cho các truy vấn pháp lý vốn đã hoạt động tốt trước khi có Tabular pipeline).
+Sau khi BFF forward sang RAG Core, bước đầu tiên là `ContentTypeClassifier.classify()` - hàm rule-based hoàn toàn, **không gọi LLM**, độ trễ ~0ms. Classifier có 11 rule theo thứ tự ưu tiên, first-match-wins, fallback về `'legal'` khi không rule nào khớp (đảm bảo zero regression cho các truy vấn pháp lý vốn đã hoạt động tốt trước khi có Tabular pipeline).
 
 Kết quả là một `ClassificationResult` gồm:
 
@@ -301,14 +301,17 @@ Một trong những quyết định kiến trúc quan trọng nhất của hệ 
 
 > **Khác biệt điều phối giữa ba pipeline:** `ContentTypeClassifier` là bộ phân loại **nhị phân** (legal / tabular) — nó quyết định nhánh cho hai pipeline gốc. **Pipeline General KHÔNG đi qua classifier**: nó vào cùng pool ở `retrieve_unified_sync()` và **giành handler bằng rerank** (top-1 content_type sau khi rerank), được gác bởi cờ `general_dispatch.enabled`. Chi tiết luồng general xem Phần 2 §2.1.3 (indexing) và Phần 6 §15 (dispatch + saga blend).
 
-### 6.1 Tám rule của ContentTypeClassifier
+### 6.1 Mười một rule của ContentTypeClassifier
 
-`shared/classifiers/query_classifier.py` - rule-based, regex tiếng Việt, ~0ms. Ưu tiên từ R1 xuống R7 (với `R_DOC_REF` chèn giữa, ngay trước R7), **first-match-wins**:
+`shared/classifiers/query_classifier.py` - rule-based, regex tiếng Việt, ~0ms. Ưu tiên R1 → R2 → R2.5 → R2.6 → R2.7 → R3 → R4 → R5 → R6 → R_DOC_REF → R7 (`R_DOC_REF` chèn ngay trước R7), **first-match-wins**:
 
 | Rule | Điều kiện | Ví dụ query | Content Type | Confidence |
 |:-:|---|---|:-:|:-:|
 | R1 | Khớp pattern legal strong: `Điều \d+`, `Khoản \d+`, `'Thông tư số'`, `'Quyết định số'`, `'Nghị định số'`, `'Văn bản số'`, `'theo điều'`, `'căn cứ điều'`. | "Điều 5 Thông tư 39 quy định gì?" | **legal** | 0.95 |
 | R2 | Khớp pattern tabular strong: `'biểu phí'`, `'mức phí'`, `'phí dịch vụ'`, `'phí chuyển khoản'`, `'phí ATM/SMS/Internet'`, `'lãi suất'`, `'lãi vay'`, `'lãi tiền gửi'`, `'ưu đãi lãi'`. | "Biểu phí chuyển khoản trong nước là bao nhiêu?" | **tabular** | 0.90 |
+| R2.5 | Ngữ cảnh **chuyển tiền liên ngân hàng** (hành vi chuyển + gợi ý liên NH) — không cần từ khóa `'phí'` tường minh. | "Chuyển 200 triệu sang Vietinbank." | **tabular** (`type_tab_hint='PHI'`) | 0.75 |
+| R2.6 | Hành vi **dịch vụ PHI ngầm** (rút tiền ATM, phát hành thẻ, SMS banking…) — vốn có tính thu phí. | "Rút tiền ATM khác ngân hàng." | **tabular** (`type_tab_hint='PHI'`) | 0.70 |
+| R2.7 | Hành vi **dịch vụ LAI_SUAT ngầm** (gửi tiết kiệm, vay vốn, tín dụng cá nhân…) — vốn có tính lãi suất. | "Gửi tiết kiệm 12 tháng." | **tabular** (`type_tab_hint='LAI_SUAT'`) | 0.70 |
 | R3 | Số tiền/phần trăm + pattern phí/lãi trong cùng câu. | "3% là mức lãi suất ưu đãi à?" | **tabular** | 0.80 |
 | R4 | Cụm `'bao nhiêu'` + pattern phí/lãi. | "Phí quản lý tài khoản bao nhiêu?" | **tabular** | 0.82 |
 | R5 | Từ so sánh (`'so sánh'`, `'khác nhau'`, `'cao hơn'`, `'rẻ hơn'`…) + pattern phí/lãi. | "So sánh phí chuyển khoản giữa các kênh." | **tabular** | 0.78 |
@@ -459,7 +462,7 @@ Module `shared/` được cả ba phase và scripts import chung - chứa nhữn
 - `schemas.py` - Pydantic models (`RetrievalQuery`, `RetrievalResult`, `LegalDocumentSchema`, …).
 - `db_managers/` - wrappers cho MongoDB/Chroma/SQLite, có retry tenacity.
 - `bm25_builder.py` - tham số hoá theo `(stats_table, freq_table)` để dùng cho cả Legal và Tabular.
-- `classifiers/query_classifier.py` - `ContentTypeClassifier` 8 rules (R1–R6, R_DOC_REF, R7).
+- `classifiers/query_classifier.py` - `ContentTypeClassifier` 11 rules (R1, R2, R2.5, R2.6, R2.7, R3–R6, R_DOC_REF, R7).
 - `tabular_vector_index.py` - NumPy matrix in-memory với hot-reload signal file.
 - `query_analyzer.py` - extract numeric/temporal entity, `aggregation_intent` cho Tabular.
 

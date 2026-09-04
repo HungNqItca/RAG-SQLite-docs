@@ -28,7 +28,7 @@ So sánh hai mô hình tư duy:
 Toàn bộ thiết kế Agentic RAG bị chi phối bởi **ba ràng buộc cứng** — không được phá vỡ trong bất kỳ thay đổi nào về sau. Đây là điểm khác biệt quan trọng nhất giữa hệ thống này và một agent RAG thông thường:
 
 1. **Không hallucinate điều khoản.** Mọi trích dẫn pháp lý trong câu trả lời (Điều X, Khoản Y, văn bản Z) phải **verify được** trên dữ liệu thật do tool trả về. → Thực thi bởi **CitationGuard** (§5) + nhóm eval đối kháng N4 (§8).
-2. **Phạm vi đóng kín (closed-world).** Agent chỉ được truy cập kho đã index — **không có tool tra web**. Nhờ vậy mọi nguồn nằm trong kho, mọi trích dẫn verify được 100% bằng exact-match. → Bộ tool ban đầu gồm 4 tool, về sau bổ sung tool thứ 5 `check_validity` (§14); không tool nào ra Internet (§3, §14).
+2. **Phạm vi đóng kín (closed-world).** Agent chỉ được truy cập kho đã index — **không có tool tra web**. Nhờ vậy mọi nguồn nằm trong kho, mọi trích dẫn verify được 100% bằng exact-match. → Bộ tool ban đầu gồm 4 tool (khối A–F), về sau bổ sung `check_validity` (giai đoạn H, tool thứ 5) và `search_general` (giai đoạn GENERAL, tool thứ 6, đăng ký có điều kiện) — tối đa 6 tool; không tool nào ra Internet (§3, §14, §15).
 3. **Độc lập backend.** Hệ thống sẵn sàng chuyển sang LLM local (VinaLlama/Llama3) khi có hạ tầng GPU on-premise. → Cơ chế tool-calling dùng **ReAct prompt-based** (LLM xuất text), **không** dùng native function-calling của nhà cung cấp.
 
 Nguyên tắc bao trùm, đúc kết cả ba ràng buộc trên thành một câu:
@@ -158,7 +158,10 @@ Lợi ích: (1) không nhân đôi logic → không lệch hành vi giữa nhán
 | `fetch_article` | `LegalHandler._lookup_document_id()` + `_fetch_chunks_from_mongodb()` | `doc_ref`, `article_num` | `(resolved, document_id, clauses[])` — **ground truth** cho CitationGuard |
 | `compute` | `TabularAggregator.aggregate()` | `op` (COMPARE/MIN/MAX/LIST_ALL), `items` | `(format, markdown_table, sort_info, results)` |
 
-**Phạm vi đóng kín:** Bốn tool trên là "thế giới" agent được phép truy cập ở khối nền tảng A–F. Không có tool tra web. Đây là điều kiện để CitationGuard verify được 100% (§5.1). Về sau, giai đoạn H bổ sung **tool thứ 5 `check_validity`** để tra hiệu lực pháp lý (§14) — vẫn tuân thủ closed-world, chỉ đọc từ index nội bộ.
+**Phạm vi đóng kín:** Bốn tool trên là "thế giới" agent được phép truy cập ở khối nền tảng A–F. Không có tool tra web. Đây là điều kiện để CitationGuard verify được 100% (§5.1). Về sau bộ tool được mở rộng thêm hai tool, vẫn tuân thủ closed-world (chỉ đọc index nội bộ, không ra Internet):
+
+- **Tool thứ 5 `check_validity`** (giai đoạn H) — tra hiệu lực pháp lý của văn bản (§14). Luôn được đăng ký.
+- **Tool thứ 6 `search_general`** (giai đoạn GENERAL) — tra tài liệu nội bộ (sổ tay/hướng dẫn/công văn/báo cáo) trên agent-path (§15). **Đăng ký có điều kiện**: `build_default_tools()` chỉ `append` tool này khi cờ `general_dispatch.enabled=true` (production đang bật). Vì vậy cấu hình production hiện chạy **6 tool**; khi tắt general_dispatch thì còn 5 tool.
 
 Ví dụ một câu hỏi đa bước được giải bằng chuỗi tool:
 
@@ -962,9 +965,9 @@ Bổ sung cho 8 ADR nền tảng ở §9. Mỗi ADR: Quyết định / Lý do / 
 
 ## 18. Tổng kết
 
-Phần 6 tài liệu hóa bản nâng cấp Agentic RAG qua hai khối. **Khối nền tảng A–F** (§2–§9, 125 test pass, deploy 2026-06-09) bổ sung khả năng trả lời câu hỏi đa bước qua vòng lặp ReAct + 4 tool + CitationGuard + Router, bọc sau công tắc `agentic_rag`. **Khối nâng cao G–J** (§10–§17) thêm hai trục Guard mới (FeeGuard cho trục GIÁ TRỊ/VAI TRÒ, TemporalGuard cho trục HIỆU LỰC), tool thứ 5 `check_validity`, cơ chế `ToolContext` chống méo thông tin, parity filter cho `search_tabular`, luồng general dispatch, observability Prometheus, và một bộ kỷ luật đo lường chống "xanh giả".
+Phần 6 tài liệu hóa bản nâng cấp Agentic RAG qua hai khối. **Khối nền tảng A–F** (§2–§9, 125 test pass, deploy 2026-06-09) bổ sung khả năng trả lời câu hỏi đa bước qua vòng lặp ReAct + 4 tool + CitationGuard + Router, bọc sau công tắc `agentic_rag`. **Khối nâng cao G–J** (§10–§17) thêm hai trục Guard mới (FeeGuard cho trục GIÁ TRỊ/VAI TRÒ, TemporalGuard cho trục HIỆU LỰC), tool thứ 5 `check_validity` và tool thứ 6 `search_general` (đăng ký có điều kiện theo `general_dispatch.enabled`), cơ chế `ToolContext` chống méo thông tin, parity filter cho `search_tabular`, luồng general dispatch, observability Prometheus, và một bộ kỷ luật đo lường chống "xanh giả".
 
-Ba ràng buộc cứng được giữ trọn qua mọi giai đoạn: **không hallucinate** (nay là ba trục Guard, không chỉ CitationGuard), **phạm vi đóng kín** (5 tool, không web — `check_validity` vẫn chỉ đọc index nội bộ), **độc lập backend** (ReAct prompt-based). Nguyên tắc bao trùm — *LLM được tự do về điều hướng, nhưng bị kỷ luật về trích dẫn, giá trị và hiệu lực* — mở rộng tự nhiên từ khối A–F sang G–J.
+Ba ràng buộc cứng được giữ trọn qua mọi giai đoạn: **không hallucinate** (nay là ba trục Guard, không chỉ CitationGuard), **phạm vi đóng kín** (tối đa 6 tool — 5 tool cố định + `search_general` khi bật general_dispatch; không tool nào ra web, kể cả `check_validity`/`search_general` đều chỉ đọc index nội bộ), **độc lập backend** (ReAct prompt-based). Nguyên tắc bao trùm — *LLM được tự do về điều hướng, nhưng bị kỷ luật về trích dẫn, giá trị và hiệu lực* — mở rộng tự nhiên từ khối A–F sang G–J.
 
 Ba kỷ luật vận hành xuyên suốt, đáng ghi nhớ cho mọi thay đổi về sau: (1) **cờ phủ hai đường phải top-level**, nhét dưới `agent:` thì fast-path im lặng; (2) **shadow trước enforce**, chỉ flip sau khi đo 0 false-positive ≥3 vòng; (3) **đo trước khi kết luận** — cả saga `blend_into_legal` lẫn bốn lần "xanh giả" đều là bài học rằng gate xanh trong một cấu hình không phải gate xanh.
 

@@ -1006,7 +1006,7 @@ Phase 3 là **tầng sinh câu trả lời** của hệ thống RAG. Đây là p
 
 - **Legal pipeline:** Trả lời câu hỏi pháp lý, **luôn trích dẫn** Điều/Khoản cụ thể trong văn bản nguồn.
 - **Tabular pipeline:** Tra cứu biểu phí / lãi suất / khuyến mãi từ SQLite TABULAR_DATA.
-- **ContentTypeClassifier:** 8 rules regex ~0ms (R1–R6, R_DOC_REF, R7), fallback về `legal` — zero regression guarantee.
+- **ContentTypeClassifier:** 11 rules regex ~0ms (R1, R2, R2.5, R2.6, R2.7, R3–R6, R_DOC_REF, R7), fallback về `legal` — zero regression guarantee.
 - Hỗ trợ **hội thoại đa lượt** có nhớ ngữ cảnh (multi-turn).
 - Chạy được với cả **Gemini API (cloud)** và **VinaLlama (local CPU)**.
 - Không phụ thuộc vào Phase 2 API server — gọi trực tiếp qua import Python.
