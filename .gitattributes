@@ -1,0 +1,7 @@
+# Chuẩn hoá line endings: repo lưu LF, checkout theo OS
+* text=auto
+
+# Nhị phân — không đụng vào
+*.png binary
+*.docx binary
+*.pdf binary
