@@ -1,0 +1,12 @@
+flowchart TB
+    subgraph SRC["Hai nguồn document_id"]
+        S1["sources[].document_id<br/>(search_legal + fetch_article)"]
+        S2["structured_trace<br/>_TEMPORAL_REF_TOOLS = {check_validity}<br/>(nguồn thứ hai — I0)"]
+    end
+    S1 --> COL["collect_temporal_flags()<br/>tra legal_status"]
+    S2 --> COL
+    COL --> W{"status ∈<br/>{expired, amended, draft}?"}
+    W -->|có| BLK["render_temporal_block()<br/>TEMPORAL_BLOCK_MARKER<br/>'⚠️ HIỆU LỰC VĂN BẢN:'"]
+    W -->|active| NONE["'' (không chèn)"]
+    BLK --> APP["annotate_with_temporal()<br/>CHÈN cuối, KHÔNG xoá gốc"]
+    APP -.->|"agent + fast-path<br/>dùng CHUNG core/temporal_annotator"| PARITY["một luật, không viết hai bản"]

@@ -1,0 +1,9 @@
+flowchart TB
+    QM["query_metrics<br/>(bảng chính)<br/>request_id · run_id · env · concurrency<br/>system_type · dispatch_path<br/>10 raw timestamps + 3 pre-computed<br/>status · answer_text"]
+    COR["corpus<br/>query_id · group · query_text<br/>expected_citation · expected_refusal"]
+    QE["quality_eval<br/>citation_correct · hallucination<br/>refusal_appropriate · relevance(1-5)<br/>UNIQUE(query_id, system, round)"]
+    V["v_metrics_clean (VIEW)<br/>status ∈ {success, clarification}<br/>∧ is_warmup=0 ∧ 100 ≤ total_ms ≤ 60000"]
+    QM -->|JOIN query_id| COR
+    QM -->|JOIN query_id| QE
+    QM -->|lọc mặc định| V
+    V -.->|analysis LUÔN đọc từ view| ANA["analyze_metrics.py"]

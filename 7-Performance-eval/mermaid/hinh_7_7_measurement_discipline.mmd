@@ -1,0 +1,10 @@
+flowchart TB
+    G["Tuyên bố kết quả eval ĐẠT"] --> Q1{"runner/tệp viện dẫn<br/>CÓ TỒN TẠI trong repo?"}
+    Q1 -->|không| F1["run_agentic_responses ở scratchpad<br/>→ N1/N4 chưa chạy lần nào"]
+    Q1 -->|có| Q2{"đọc N4 KÈM refusal_correct?"}
+    Q2 -->|"chỉ đọc hallucination_rate"| F2["answer RỖNG → hallucinated=False<br/>→ gate XANH khi hệ đang hỏng"]
+    Q2 -->|có| Q3{"dụng cụ đo IMPORT hằng/logic<br/>của production (không CHÉP)?"}
+    Q3 -->|chép lệch| F3["hash corpus lệch → báo động giả<br/>'corpus đã bị sửa'"]
+    Q3 -->|import| Q4{"mẫu số nói rõ CÂU hay CHUNK?"}
+    Q4 -->|nhập nhằng| F4["52 câu neo 12 chunk<br/>→ thống kê sai mẫu số"]
+    Q4 -->|rõ| PASS["Kết quả đọc được, đáng tin"]

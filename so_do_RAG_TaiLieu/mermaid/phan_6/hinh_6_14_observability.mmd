@@ -1,0 +1,14 @@
+flowchart TB
+    subgraph EP["Hai điểm cắm (stream-only)"]
+        E1["E-1: _with_temporal_guard<br/>3 nhánh fast-path + clarification"]
+        E2["E-2: interceptor 'done' nhánh agent<br/>route agentic + fee_guard"]
+    end
+    E1 --> SE["_safe_emit(point, fn)<br/>lỗi metric KHÔNG làm hỏng request"]
+    E2 --> SE
+    SE --> M["metrics_agent.py (Prometheus)"]
+    M --> M1["rag_dispatch_total{path,transport}"]
+    M --> M2["rag_request_duration_seconds"]
+    M --> M3["rag_fee_number_grounded_total<br/>(chỉ agent-path)"]
+    M --> M4["rag_temporal_marker_emitted_total"]
+    M --> M5["rag_metric_emit_errors_total (tự kiểm)"]
+    M1 -.->|"path ∈ {unified,legacy,agentic,unknown}<br/>miền ĐÓNG, giá trị lạ → _clamp()"| CL["dispatch_label_clamped"]

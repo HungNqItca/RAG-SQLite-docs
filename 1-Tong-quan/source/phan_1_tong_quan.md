@@ -2,11 +2,11 @@
 
 ## 1. Giới thiệu tài liệu
 
-Tài liệu này mô tả toàn cảnh kiến trúc, thành phần và các luồng vận hành của hệ thống **RAG-Chatbot**  - một chatbot nội bộ tra cứu văn bản pháp luật, văn bản định chế và biểu phí, lãi suất dành cho cán bộ tác nghiệp tại Trung tâm Thanh toán. Đây là phần đầu tiên trong bộ tài liệu thiết kế gồm sáu phần, đóng vai trò giới thiệu chung để người đọc nhanh chóng định hình được bức tranh tổng thể trước khi đi sâu vào từng phân hệ ở các phần tiếp theo.
+Tài liệu này mô tả toàn cảnh kiến trúc, thành phần và các luồng vận hành của hệ thống **RAG-Chatbot**  - một chatbot nội bộ tra cứu văn bản pháp luật, văn bản định chế và biểu phí, lãi suất dành cho cán bộ tác nghiệp tại Trung tâm Thanh toán. Đây là phần đầu tiên trong bộ tài liệu thiết kế gồm bảy phần, đóng vai trò giới thiệu chung để người đọc nhanh chóng định hình được bức tranh tổng thể trước khi đi sâu vào từng phân hệ ở các phần tiếp theo.
 
 Đối tượng đọc gồm kỹ sư phần mềm tiếp nhận bàn giao hệ thống, chuyên viên vận hành và đào tạo viên phụ trách chuyển giao công nghệ. Mỗi khái niệm được giới thiệu kèm ngữ cảnh nghiệp vụ và lý do thiết kế (Why), do đó người đọc không cần kinh nghiệm trước với kiến trúc RAG vẫn có thể theo dõi được.
 
-### Cấu trúc bộ tài liệu sáu phần
+### Cấu trúc bộ tài liệu bảy phần
 
 | Phần | Nội dung | Phạm vi chính |
 |---|---|---|
@@ -15,7 +15,8 @@ Tài liệu này mô tả toàn cảnh kiến trúc, thành phần và các lu�
 | 3 | BFF Service | JWT, RBAC 4 tầng, rate limit, SSE proxy, permanent history, mixin architecture |
 | 4 | Agribank-Chat (UI) + Phụ lục | React + Vite, Zustand, sseClient, Admin panel, glossary tổng hợp |
 | 5 | Hạ tầng & Vận hành | Triển khai production, CI/CD, giám sát, migrations, Nginx/HTTPS, backup/restore |
-| 6 | Nâng cấp Agentic RAG | Vòng lặp ReAct, 4 tool, CitationGuard, Router — trả lời câu hỏi đa bước (mở rộng Phase 3, bọc sau công tắc `agentic_rag`) |
+| 6 | Nâng cấp Agentic RAG | Vòng lặp ReAct, 5 tool, ba trục Guard (Citation/Fee/Temporal), Router — trả lời câu hỏi đa bước (mở rộng Phase 3, bọc sau công tắc `agentic_rag`); giai đoạn A–J |
+| 7 | Performance Evaluation | Đo latency theo phase, so sánh RAG vs Vanilla, chất lượng (citation/hallucination/relevance); corpus G1–G8, kiểm định phi tham số, kỷ luật chống "xanh giả" |
 
 Các phần sau tham chiếu chéo ngược về Phần 1 này khi cần nhắc lại kiến trúc tổng, quy ước đặt tên hoặc chỉ số cổng. Phần 1 giữ vai trò là "bản đồ" xuyên suốt bộ tài liệu.
 
@@ -110,7 +111,7 @@ Hệ thống được tách thành **ba phân hệ (tầng) độc lập**, tri�
 | **N2** | BFF là cổng duy nhất ra ngoài - mọi request từ frontend đều phải qua JWT. | Tập trung xác thực, phân quyền, rate limit vào một nơi. Không phải nhân bản logic auth ở RAG Core. Nếu cần thêm tính năng (audit, logging, OIDC…), chỉ sửa ở BFF. |
 | **N3** | Frontend không bao giờ gọi RAG Core trực tiếp - phải qua BFF. | Tôn trọng N1 và N2. Đồng thời giúp BFF có thể cache, log, kiểm soát tốc độ. Frontend chỉ biết một URL duy nhất ra ngoài: BFF. |
 | **N4** | Phase 3 gọi Phase 2 qua **import Python trực tiếp**, không HTTP. | Tiết kiệm overhead serialization JSON và connection pool. Phase 2 API `:8000` chỉ cần khi test retrieval độc lập, không khi vận hành chatbot thường ngày. |
-| **N5** | Hai pipeline **Legal** (VB pháp lý) và **Tabular** (bảng dữ liệu) cách ly hoàn toàn - zero cross-contamination. | Legal query không bao giờ chạm `TABULAR_*` tables; tabular query không chạm MongoDB/ChromaDB. Tránh nhiễu điểm số khi BM25/Vector tính trên hai phân phối dữ liệu rất khác nhau. |
+| **N5** | Ba pipeline **Legal** (VB pháp lý), **Tabular** (bảng dữ liệu) và **General** (tài liệu nội bộ) cách ly hoàn toàn - zero cross-contamination. | Legal query không bao giờ chạm `TABULAR_*` tables; tabular query không chạm MongoDB/ChromaDB; general có bảng `general_*` + BM25 + collection Chroma riêng. Tránh nhiễu điểm số khi BM25/Vector tính trên các phân phối dữ liệu rất khác nhau. |
 | **N6** | Fallback về `'legal'` khi không rõ - zero regression guarantee. | `ContentTypeClassifier` nghi ngờ thì luôn trả về `'legal'` (hành vi trước đây), bảo toàn các truy vấn pháp lý vốn đã hoạt động tốt. Rủi ro bất cân xứng: legal RAG trả "không tìm thấy" còn tabular RAG trả lời sai số liệu sẽ nguy hiểm hơn. |
 
 ### 3.3 Trao đổi giữa các tầng
@@ -290,13 +291,15 @@ Nếu tính năng `followup_suggestions.enabled` bật (mặc định **tắt**)
 
 ---
 
-## 6. Hai pipeline song song - Content Type Dispatch
+## 6. Ba pipeline dữ liệu song song - Content Type Dispatch
 
-Một trong những quyết định kiến trúc quan trọng nhất của hệ thống là **chạy song song hai pipeline Legal và Tabular** với cơ chế điều phối dựa trên một biến duy nhất - `content_type`. Cơ chế này giúp:
+Một trong những quyết định kiến trúc quan trọng nhất của hệ thống là **chạy song song các pipeline dữ liệu tách biệt** với cơ chế điều phối dựa trên một biến duy nhất - `content_type`. Ban đầu hệ thống có **hai pipeline Legal và Tabular** điều phối bởi `ContentTypeClassifier`; về sau bổ sung **pipeline General** (tài liệu nội bộ không có cấu trúc Điều–Khoản) — nâng tổng số lên **ba pipeline dữ liệu song song, tách hẳn nhau** (bảng SQLite riêng, index BM25 riêng — xem Phần 2 §2.1). Cơ chế này giúp:
 
 - **(a)** Giữ nguyên luồng pháp lý đã chạy ổn định trước đây (zero regression).
-- **(b)** Mở rộng sang loại dữ liệu mới (biểu phí, lãi suất, khuyến mãi…) mà không sửa core.
+- **(b)** Mở rộng sang loại dữ liệu mới (biểu phí, lãi suất, khuyến mãi…; và sau đó là tài liệu nội bộ) mà không sửa core.
 - **(c)** Đảm bảo **không có nhiễm chéo** điểm số hay routing (Nguyên tắc N5).
+
+> **Khác biệt điều phối giữa ba pipeline:** `ContentTypeClassifier` là bộ phân loại **nhị phân** (legal / tabular) — nó quyết định nhánh cho hai pipeline gốc. **Pipeline General KHÔNG đi qua classifier**: nó vào cùng pool ở `retrieve_unified_sync()` và **giành handler bằng rerank** (top-1 content_type sau khi rerank), được gác bởi cờ `general_dispatch.enabled`. Chi tiết luồng general xem Phần 2 §2.1.3 (indexing) và Phần 6 §15 (dispatch + saga blend).
 
 ### 6.1 Tám rule của ContentTypeClassifier
 
@@ -713,11 +716,11 @@ Dữ liệu đi qua **ba giai đoạn rõ rệt**:
 2. **Storage** (lưu trữ trong 5 CSDL).
 3. **Retrieval + Generation** (runtime, chạy mỗi khi có câu hỏi).
 
-Sơ đồ dưới đây cho thấy cách **hai pipeline Legal và Tabular** chia sẻ một số CSDL nhưng giữ bảng và collection tách biệt - không có nhiễm chéo (Nguyên tắc N5).
+Sơ đồ dưới đây cho thấy cách **pipeline Legal và Tabular** chia sẻ một số CSDL nhưng giữ bảng và collection tách biệt - không có nhiễm chéo (Nguyên tắc N5). Pipeline **General** (bổ sung sau) cũng tuân theo cùng nguyên tắc cách ly với bộ bảng `general_*` + BM25 + collection Chroma riêng (xem Phần 2 §2.1.3).
 
-![Hình 10.1 - Vòng đời dữ liệu qua ba phase cho cả hai pipeline Legal và Tabular](../png/hinh_10_1_vong_doi_du_lieu.png)
+![Hình 10.1 - Vòng đời dữ liệu qua ba phase cho pipeline Legal và Tabular](../png/hinh_10_1_vong_doi_du_lieu.png)
 
-*Hình 10.1 - Vòng đời dữ liệu qua ba phase cho cả hai pipeline Legal và Tabular.*
+*Hình 10.1 - Vòng đời dữ liệu qua ba phase cho pipeline Legal và Tabular (pipeline General tuân theo cùng mô hình cách ly, không vẽ ở đây để giữ sơ đồ gọn).*
 
 ### 10.1 Năm cơ sở dữ liệu và vai trò
 
@@ -725,7 +728,7 @@ Sơ đồ dưới đây cho thấy cách **hai pipeline Legal và Tabular** chia
 |---|---|---|
 | **MongoDB** | RAG Core | **Legal only.** Lưu hierarchical structure `Văn bản → Điều → Khoản → Điểm`. Dùng cho Article Expansion (Phase 2) và Tầng B.5 MongoDB direct fetch (Phase 3). |
 | **ChromaDB** (file-based) | RAG Core | **Legal only.** Collection `legal_clauses` chứa vector embeddings (dim 384) của từng chunk. |
-| **SQLite: `metadata.db`** | RAG Core | **Cả hai pipeline.** Bảng Legal: `documents`, `chunks`, `bm25_statistics`, `chunk_term_frequencies`, `adaptive_keywords`. Bảng Tabular: `TABULAR_TYPE_REGISTRY`, `TABULAR_FIELD_META`, `TABULAR_DATA`, `tabular_bm25_statistics`, `tabular_term_frequencies`, `tabular_ingestion_log`, `query_classification_log`. |
+| **SQLite: `metadata.db`** | RAG Core | **Cả ba pipeline.** Bảng Legal: `documents`, `chunks`, `bm25_statistics`, `chunk_term_frequencies`, `adaptive_keywords`. Bảng Tabular: `TABULAR_TYPE_REGISTRY`, `TABULAR_FIELD_META`, `TABULAR_DATA`, `tabular_bm25_statistics`, `tabular_term_frequencies`, `tabular_ingestion_log`, `query_classification_log`. Bảng General: `general_documents`, `general_chunks`, `general_bm25_statistics`, `general_term_frequencies`. |
 | **SQLite: `conversations.db`** | RAG Core | LLM context window - **TTL 72h**. Không phải permanent history - khi expire, BFF vẫn có lịch sử để hiển thị. |
 | **SQLite: `users.db`** | BFF | Auth (`users`, `refresh_tokens`), session ownership (`user_sessions`), **permanent chat history** (bảng `conversations`), admin analytics (`chat_activity_log`). |
 

@@ -1,0 +1,7 @@
+flowchart TB
+    DR["doc_ref (LLM tự sinh)<br/>'TT 15/2024' / 'Thông tư số 15/2024'"] --> RES["① RESOLVE<br/>doc_key(_normalize_abbrevs(doc_ref))<br/>tra index {doc_key(title)→document_id}"]
+    RES --> W["② WRAP<br/>SQLiteManager.get_document_temporal()"]
+    W --> CA{"Kết quả?"}
+    CA -->|"có index, active"| A["Ca A: found=True, đủ field"]
+    CA -->|"có index, ngày=NULL"| B["Ca B: found=True<br/>'Không rõ ngày hiệu lực'"]
+    CA -->|"không index / >1 VB / parse lỗi"| C["Ca C: found=False<br/>MỌI field=None<br/>KHÔNG trả 'active'"]

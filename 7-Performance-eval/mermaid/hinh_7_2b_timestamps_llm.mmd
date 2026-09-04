@@ -1,0 +1,6 @@
+flowchart TB
+    T5["[5] retrieval_done<br/>(nối từ Hình 7.2a)"] --> T6["[6] prompt_built<br/>sau PromptBuilder"]
+    T6 --> T7["[7] llm_first_token<br/>token đầu → đo TTFB"]
+    T7 --> T8["[8] llm_last_token<br/>token cuối → đo streaming"]
+    T8 --> T9["[9] response_done<br/>sau SSE stream → đo total"]
+    T9 -.->|"raw ms lưu DB; phase durations<br/>tính lúc analysis theo dispatch_path"| NOTE["compute_phase_durations()"]

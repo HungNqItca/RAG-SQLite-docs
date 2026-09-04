@@ -1,0 +1,7 @@
+flowchart TB
+    Q["Câu hỏi GỐC người dùng<br/>'chuyển 200tr đi Vietinbank'"] --> LOOP["AgentLoop"]
+    LOOP -->|"args do LLM sinh<br/>(có thể méo)"| A["query='phí chuyển tiền liên NH cá nhân'<br/>← mất tên ngân hàng"]
+    LOOP -->|"ToolContext<br/>đi theo request"| TC["question = câu GỐC<br/>frozen=True"]
+    A --> DISP["ToolRegistry.dispatch(name, args, ctx)"]
+    TC --> DISP
+    DISP --> TOOL["Tool.run() — suy scope/đơn vị<br/>từ ctx.question, KHÔNG từ args méo"]

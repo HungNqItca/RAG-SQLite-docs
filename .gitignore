@@ -25,3 +25,10 @@ desktop.ini
 *.tmp
 *.bak
 ~$*
+
+# Bản dựng (build output) — sinh lại từ source bằng build_docx.py
+*.docx
+*.pdf
+
+# Tài liệu bản cũ
+OLD/

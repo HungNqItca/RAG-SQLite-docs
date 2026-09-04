@@ -1,0 +1,9 @@
+flowchart TB
+    INIT["MetricsLogger.init() → tạo schema"] --> CORP["_init_corpus_in_db() → 160 rows"]
+    CORP --> LOGIN["POST /auth/login → token"]
+    LOGIN --> A["System A: RAG-SQLite<br/>warm-up ×5 + đo ×160"]
+    A --> B["System B: Vanilla Gemini<br/>đo ×160 (cùng corpus)"]
+    B --> SAVE["results/dev/phase1_*.json<br/>(client TTFB) + metrics.db (server)"]
+    SAVE --> ANA["analyze_metrics.py<br/>đọc v_metrics_clean"]
+    ANA --> T["Table 1–7<br/>phase · group · comparative · quality · kruskal · concurrency · failure"]
+    ANA --> FIG["generate_figures.py<br/>PDF (vector) + PNG (300dpi)"]

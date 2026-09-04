@@ -1,0 +1,8 @@
+flowchart TB
+    FA["Final Answer + structured_trace"] --> G1["CitationGuard<br/>trục TỒN TẠI<br/>trích dẫn có thật?"]
+    G1 --> G2["FeeGuard<br/>trục GIÁ TRỊ + VAI TRÒ<br/>số tiền đúng? sàn/trần đúng?"]
+    G2 --> G3["TemporalGuard<br/>trục HIỆU LỰC<br/>văn bản còn sống?"]
+    G3 --> OUT["Câu trả lời đã kiểm ba trục"]
+    G1 -.->|agent-path| SC1["repair / annotate"]
+    G2 -.->|agent-path| SC2["repair (XOÁ VẾ / THAY SỐ)"]
+    G3 -.->|cả hai đường| SC3["chèn khối ⚠️ HIỆU LỰC"]

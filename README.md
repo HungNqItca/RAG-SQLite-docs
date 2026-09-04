@@ -1,6 +1,6 @@
 # Tài liệu Thiết kế Hệ thống RAG-Chatbot Pháp lý Agribank
 
-Bộ tài liệu kỹ thuật chuẩn bị cho công tác đào tạo và chuyển giao công nghệ — 6 phần, viết theo lối **Why → What → How**.
+Bộ tài liệu kỹ thuật chuẩn bị cho công tác đào tạo và chuyển giao công nghệ — 7 phần, viết theo lối **Why → What → How**.
 
 ## Trạng thái
 
@@ -11,7 +11,8 @@ Bộ tài liệu kỹ thuật chuẩn bị cho công tác đào tạo và chuy�
 | **3** | BFF Service | 36 | 8 | ✅ Hoàn thành |
 | **4** | agribank-chat (UI) + Phụ lục | 38 | 10 | ✅ Hoàn thành |
 | **5** | Hạ tầng & Vận hành (DevOps) | 25 | 6 | ✅ Hoàn thành |
-| **6** | Nâng cấp Agentic RAG | 30 | 7 | ✅ Hoàn thành |
+| **6** | Nâng cấp Agentic RAG (giai đoạn A–J) | 54 | 16 | ✅ Hoàn thành |
+| **7** | Performance Evaluation | 25 | 7 | ✅ Hoàn thành |
 
 ---
 
@@ -116,10 +117,11 @@ Tài liệu/
 ├── 3-Bff-service/
 ├── 4-Agribank-chat/
 ├── 5-Ha-tang-Van-hanh/
-├── 6-Agentic-rag/                     ← Nâng cấp Agentic RAG (mới)
+├── 6-Agentic-rag/                     ← Nâng cấp Agentic RAG (A–J)
+├── 7-Performance-eval/                ← Performance Evaluation (mới)
 └── so_do_RAG_TaiLieu/
-    ├── mermaid/phan_1..6/             ← File .mmd gốc để render
-    ├── png/phan_1..6/                 ← PNG render từ .mmd
+    ├── mermaid/phan_1..7/             ← File .mmd gốc để render
+    ├── png/phan_1..7/                 ← PNG render từ .mmd
     ├── mermaid_config.json
     └── puppeteer.json
 ```
@@ -229,3 +231,31 @@ Lớp khả năng mới mở rộng Phase 3 (Generation): vòng lặp ReAct cho 
 - Fast-path fallback xuyên suốt — agent lỗi/rỗng thì quay về pipeline cũ, không làm hỏng trải nghiệm
 - Bật dần shadow → conservative qua `router_log_analyzer.py`; `/health` phản ánh `mode: agentic|classic`
 - Nguồn: 6 giai đoạn A–F, **125 test pass, 0 fail**, đã deploy 2026-06-09
+- Giai đoạn nâng cao G–J (§10–§17): ba trục Guard (Citation/Fee/Temporal), tool thứ 5 `check_validity`, ToolContext, general dispatch, observability Prometheus, kỷ luật chống "xanh giả"
+
+---
+
+## Phần 7 — Performance Evaluation
+
+Phân hệ đo lường ngang hàng với ba service chính (`performance_evaluation/`, sibling của `rag-core/`). Trả lời 5 câu hỏi nghiên cứu về latency (theo phase, theo tải 1→20 user), overhead RAG so với Vanilla Gemini, và chất lượng (citation accuracy / hallucination / relevance). Nhúng một lớp instrumentation nhẹ **non-intrusive** vào RAG Core (10 timestamp, best-effort logging) ghi vào `metrics.db`; phân tích offline bằng các kiểm định phi tham số.
+
+| § | Tiêu đề | Sơ đồ |
+|:-:|---------|:-----:|
+| 2 | Kiến trúc thành phần + vị trí | Hình 7.1 |
+| 3 | 10 timestamp + 3 dispatch path | Hình 7.2a/b, 7.3 |
+| 4 | Database schema (query_metrics/corpus/quality_eval) | Hình 7.4 |
+| 5 | Instrumentation Layer | — |
+| 6 | Test Corpus G1–G8 + reproducibility | — |
+| 7 | Runners + Analysis + kiểm định thống kê | Hình 7.5, 7.6 |
+| 8 | Điểm tích hợp RAG Core | — |
+| 9 | Kỷ luật đo lường — chống "xanh giả" | Hình 7.7 |
+| 10 | Bộ eval Agentic | — |
+| 11 | 7 Architecture Decision Records | — |
+
+**Điểm nổi bật:**
+- **Non-intrusive**: lỗi instrumentation không làm crash pipeline (best-effort logging, `try/except` toàn bộ điểm cắm)
+- **Reproducible**: corpus G1–G6 đóng băng bằng MD5 hash, seed cố định 42
+- Mô hình 10 timestamp + tính phase duration lúc phân tích (path-dependent), 3 dispatch path (unified/legacy/vanilla)
+- Kiểm định **phi tham số** nhất quán (Mann-Whitney, Cliff's delta, Kruskal-Wallis, Spearman, Bootstrap CI)
+- **Kỷ luật chống "xanh giả"**: công cụ viện dẫn phải tồn tại · chỉ số đọc kèm chỉ số bù · dụng cụ đo import (không chép) logic production · mẫu số câu/chunk minh bạch
+- Corpus mới G7/G8 cho luồng general + agent; bộ âm 50 câu có nhóm `weak`

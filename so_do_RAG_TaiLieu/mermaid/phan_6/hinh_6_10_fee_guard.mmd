@@ -1,0 +1,8 @@
+flowchart TB
+    ANS["Answer có số tiền"] --> EX["extract_amounts(text, units)<br/>rút cặp (đơn vị, giá trị)"]
+    EX --> V{"GIÁ TRỊ: số có trong<br/>structured_trace?"}
+    V -->|không| R1["ungrounded → repair THAY SỐ"]
+    V -->|có| ROLE{"VAI TRÒ: sàn/trần<br/>đúng dòng, đúng đơn vị?"}
+    ROLE -->|sai vai trò| R2["repair XOÁ VẾ<br/>(không THAY SỐ)"]
+    ROLE -->|đúng| OK["grounded=true"]
+    EX -.->|"đơn vị suy từ câu hỏi<br/>KHÔNG quy đổi tỉ giá"| NOTE["FT4→FN1, FT5→FN2"]

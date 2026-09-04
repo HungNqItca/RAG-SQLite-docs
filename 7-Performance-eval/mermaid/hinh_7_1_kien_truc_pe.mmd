@@ -1,0 +1,20 @@
+flowchart TB
+    subgraph RC["RAG Core (rag-core/phase3_generation)"]
+        API["api/main.py<br/>lifespan → MetricsLogger.init()<br/>/chat/stream đọc X-headers"]
+        ORCH["generation_orchestrator.py<br/>QueryMetrics + mark()"]
+        HDL["handlers<br/>mark() tại phase boundary"]
+    end
+    subgraph PE["performance_evaluation/ (sibling của rag-core)"]
+        COR["corpus/ G1–G8 + CORPUS_HASH"]
+        INS["instrumentation/<br/>metrics_collector + schema.sql"]
+        RUN["runners/<br/>run_baseline · vanilla · locust"]
+        ANA["analysis/<br/>analyze_metrics · figures"]
+    end
+    DB[("metrics.db<br/>rag-core/data/")]
+    API -->|init schema| DB
+    ORCH -->|mark → log| DB
+    HDL -->|mark → log| DB
+    RUN -->|HTTP + X-headers| API
+    INS -.->|QueryMetrics, MetricsLogger| ORCH
+    DB -->|đọc offline| ANA
+    ANA --> REP["report/ tables + figures"]

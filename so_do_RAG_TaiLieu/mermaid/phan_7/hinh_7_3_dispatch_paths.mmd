@@ -1,0 +1,7 @@
+flowchart TB
+    Q["Query + dispatch_path"] --> P{"path?"}
+    P -->|unified| U["classification → retrieval (orchestrator)<br/>→ slot/condense (handler) → prompt"]
+    P -->|legacy| L["classification → slot/condense<br/>→ [rewrite] → retrieval → prompt"]
+    P -->|vanilla| V["mọi timestamp = t_start<br/>phase_ms = 0 (không pipeline)"]
+    U -.->|"unified fail (F1/v6)"| FB["override path=legacy<br/>reset t_retrieval_done=None"]
+    FB --> L

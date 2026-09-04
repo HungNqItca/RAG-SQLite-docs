@@ -28,7 +28,7 @@ So sánh hai mô hình tư duy:
 Toàn bộ thiết kế Agentic RAG bị chi phối bởi **ba ràng buộc cứng** — không được phá vỡ trong bất kỳ thay đổi nào về sau. Đây là điểm khác biệt quan trọng nhất giữa hệ thống này và một agent RAG thông thường:
 
 1. **Không hallucinate điều khoản.** Mọi trích dẫn pháp lý trong câu trả lời (Điều X, Khoản Y, văn bản Z) phải **verify được** trên dữ liệu thật do tool trả về. → Thực thi bởi **CitationGuard** (§5) + nhóm eval đối kháng N4 (§8).
-2. **Phạm vi đóng kín (closed-world).** Agent chỉ được truy cập kho đã index — **không có tool tra web**. Nhờ vậy mọi nguồn nằm trong kho, mọi trích dẫn verify được 100% bằng exact-match. → Chỉ 4 tool, không tool nào ra Internet (§3).
+2. **Phạm vi đóng kín (closed-world).** Agent chỉ được truy cập kho đã index — **không có tool tra web**. Nhờ vậy mọi nguồn nằm trong kho, mọi trích dẫn verify được 100% bằng exact-match. → Bộ tool ban đầu gồm 4 tool, về sau bổ sung tool thứ 5 `check_validity` (§14); không tool nào ra Internet (§3, §14).
 3. **Độc lập backend.** Hệ thống sẵn sàng chuyển sang LLM local (VinaLlama/Llama3) khi có hạ tầng GPU on-premise. → Cơ chế tool-calling dùng **ReAct prompt-based** (LLM xuất text), **không** dùng native function-calling của nhà cung cấp.
 
 Nguyên tắc bao trùm, đúc kết cả ba ràng buộc trên thành một câu:
@@ -41,16 +41,26 @@ Agentic RAG được bọc sau một **công tắc tổng** `agentic_rag` (mặc
 
 ### 1.4 Mục lục Phần 6
 
-| § | Tiêu đề | Sơ đồ |
-|:-:|---|:-:|
-| 2 | Kiến trúc tổng thể + công tắc `agentic_rag` | Hình 6.1 |
-| 3 | Lớp Tool — 4 tool bọc hàm Phase 2/MongoDB | Hình 6.2 |
-| 4 | Vòng lặp ReAct + parser phòng thủ | Hình 6.3a, 6.3b |
-| 5 | CitationGuard — chống hallucinate điều khoản | Hình 6.4 |
-| 6 | Router + AgentOrchestrator | Hình 6.5 |
-| 7 | Streaming verify-trước-stream + frontend | Hình 6.6 |
-| 8 | Eval 4 nhóm + bật dần + `/health` mode | Hình 6.7 |
-| 9 | Architecture Decision Records (ADR) | — |
+Phần 6 chia hai khối. **Khối A–F (§2–§9)** là bộ khung Agentic RAG nền tảng (đã triển khai và deploy 2026-06-09). **Khối nâng cao (§10–§16)** là các trục kiểm soát bổ sung và năng lực mới thêm sau đó qua các giai đoạn G–J.
+
+| § | Tiêu đề | Sơ đồ | Giai đoạn |
+|:-:|---|:-:|:-:|
+| 2 | Kiến trúc tổng thể + công tắc `agentic_rag` | Hình 6.1 | A |
+| 3 | Lớp Tool — 4 tool bọc hàm Phase 2/MongoDB | Hình 6.2 | A |
+| 4 | Vòng lặp ReAct + parser phòng thủ | Hình 6.3a, 6.3b | B |
+| 5 | CitationGuard — chống hallucinate điều khoản | Hình 6.4 | C |
+| 6 | Router + AgentOrchestrator | Hình 6.5 | D |
+| 7 | Streaming verify-trước-stream + frontend | Hình 6.6 | E |
+| 8 | Eval 4 nhóm + bật dần + `/health` mode | Hình 6.7 | F |
+| 9 | Architecture Decision Records (ADR) | — | A–F |
+| 10 | Ba trục Guard + bảng cờ production | Hình 6.8 | — |
+| 11 | ToolContext — sự thật của lượt (bộ nhớ agent) | Hình 6.9 | G2 |
+| 12 | search_tabular nâng cao — filter + effective_date | — | G1 |
+| 13 | FeeGuard — trục GIÁ TRỊ và VAI TRÒ | Hình 6.10 | I |
+| 14 | Trục HIỆU LỰC — check_validity + TemporalGuard | Hình 6.11, 6.12 | H |
+| 15 | General dispatch + saga blend_into_legal | Hình 6.13 | GENERAL |
+| 16 | Observability + kỷ luật chống "xanh giả" | Hình 6.14, 6.15 | J |
+| 17 | ADR nâng cao (giai đoạn G–J) | — | G–J |
 
 ### 1.5 Quy ước ký hiệu trong Phần 6
 
@@ -148,7 +158,7 @@ Lợi ích: (1) không nhân đôi logic → không lệch hành vi giữa nhán
 | `fetch_article` | `LegalHandler._lookup_document_id()` + `_fetch_chunks_from_mongodb()` | `doc_ref`, `article_num` | `(resolved, document_id, clauses[])` — **ground truth** cho CitationGuard |
 | `compute` | `TabularAggregator.aggregate()` | `op` (COMPARE/MIN/MAX/LIST_ALL), `items` | `(format, markdown_table, sort_info, results)` |
 
-**Phạm vi đóng kín:** Bốn tool trên là TOÀN BỘ "thế giới" agent được phép truy cập. Không có tool thứ năm tra web. Đây là điều kiện để CitationGuard verify được 100% (§5.1).
+**Phạm vi đóng kín:** Bốn tool trên là "thế giới" agent được phép truy cập ở khối nền tảng A–F. Không có tool tra web. Đây là điều kiện để CitationGuard verify được 100% (§5.1). Về sau, giai đoạn H bổ sung **tool thứ 5 `check_validity`** để tra hiệu lực pháp lý (§14) — vẫn tuân thủ closed-world, chỉ đọc từ index nội bộ.
 
 Ví dụ một câu hỏi đa bước được giải bằng chuỗi tool:
 
@@ -574,10 +584,388 @@ Các quyết định thiết kế quan trọng của bản nâng cấp Agentic R
 
 ---
 
-## 10. Tổng kết
+## 10. Ba trục Guard + bảng cờ production
 
-Bản nâng cấp Agentic RAG bổ sung khả năng trả lời câu hỏi đa bước (so sánh nhiều văn bản, kết hợp pháp lý + biểu phí) mà pipeline RAG-SQLite cũ không làm được, qua sáu giai đoạn A–F (125 test pass, đã deploy 2026-06-09). Toàn bộ được bọc sau công tắc `agentic_rag` (mặc định tắt = hệ cũ nguyên trạng), với ba ràng buộc cứng được giữ trọn: **không hallucinate điều khoản** (CitationGuard + eval N4), **phạm vi đóng kín** (4 tool, không web), **độc lập backend** (ReAct prompt-based, sẵn sàng cho LLM local). Nguyên tắc bao trùm — *LLM được tự do về điều hướng, nhưng bị kỷ luật về trích dẫn* — là kim chỉ nam cho mọi quyết định thiết kế và phải được giữ trong mọi thay đổi về sau.
+Khối A–F xây một trục kiểm soát duy nhất: **CitationGuard** (trục TỒN TẠI — trích dẫn có thật không). Vận hành thực tế cho thấy trục đó cần thiết nhưng chưa đủ: một câu trả lời có thể dẫn đúng `code_tab` mà vẫn nêu **con số sai** (§13), hoặc dẫn đúng điều khoản của một văn bản **đã hết hiệu lực** (§14). Vì vậy các giai đoạn G–J bổ sung hai trục nữa, tạo thành **ba trục Guard** chạy nối tiếp sau khi có Final Answer.
 
-Việc còn lại khi triển khai thật (ngoài phạm vi code đã giao): mở rộng corpus eval lên ~110 câu từ log thật, xây runner sinh responses qua agent thật (phụ thuộc DB staging), kiểm thực địa frontend với `agentic_rag=true`, và xác nhận `field_meta` cho `compute` trên DB thật (đường dẫn `tabular_handler.prompt_builder._get_field_meta`).
+### 10.1 Ba trục vuông góc (What)
 
-> **Hết Phần 6 — Nâng cấp Agentic RAG.** Phần này là mở rộng của Phần 2 §4 (Phase 3 — Generation). Tài liệu kỹ thuật sâu hơn cho lập trình viên: `rag-core/phase3_generation/core/agent/GUIDE_AGENTIC.md` và `phase3_generation/DESIGN.md` (§A.0–A.9).
+![Hình 6.8 — Ba trục Guard](../png/hinh_6_8_three_guards.png)
+
+*Hình 6.8 — Ba trục Guard vuông góc, mỗi trục trả lời một câu hỏi khác nhau về cùng một câu trả lời: CitationGuard hỏi "trích dẫn có tồn tại?", FeeGuard hỏi "con số có đúng giá trị và đúng vai trò sàn/trần?", TemporalGuard hỏi "văn bản còn hiệu lực?". Không trục nào thay được trục nào.*
+
+| Trục | Guard | Câu hỏi | Phạm vi | Giai đoạn |
+|---|---|---|---|:-:|
+| TỒN TẠI | CitationGuard | Trích dẫn Điều/Khoản/VB có thật? | agent-path | C |
+| GIÁ TRỊ + VAI TRÒ | FeeGuard | Số tiền đúng? Sàn hay trần, của dòng nào? | agent-path | I |
+| HIỆU LỰC | TemporalGuard | Văn bản còn sống hay đã hết hiệu lực? | **cả hai đường** | H |
+
+Điểm mấu chốt về **phạm vi**: CitationGuard và FeeGuard là *agent-scoped* — chúng chỉ chạy ở agent-path vì chỉ agent mới để LLM tự tổng hợp/tự tính; fast-path đọc thẳng từ bảng nên không cần. Ngược lại, TemporalGuard là *top-level* — hiệu lực văn bản là rủi ro của **mọi** câu trả lời pháp lý, kể cả fast-path, nên nó phủ cả hai đường (§14.3).
+
+### 10.2 Bảng cờ production — "đĩa ≠ process" (How)
+
+Một nguồn nhầm lẫn lớn khi đọc code: nhiều cờ có **mặc định trong code** khác với **giá trị đã chốt trong file config**. File config là thứ đang chạy. Bảng dưới là trạng thái production thực tế (theo `generation_config.yaml`):
+
+| Cờ | Mặc định code | Config production | Hệ quả |
+|---|:-:|:-:|---|
+| `unified_dispatch.enabled` | `false` | **`true`** | Mọi fast-path đi qua `retrieve_unified_sync()`; legacy chỉ còn fallback |
+| `agentic_rag` | `false` | **`true`** | Router `conservative` gác cửa; câu tín hiệu mạnh vào ReAct |
+| `temporal_guard.enabled` | `false` | **`true`** | Khối ⚠️ hiệu lực được chèn thật (không chỉ log) |
+| `observability.enabled` | `false` | **`true`** | Metric Prometheus phạm vi agent được phát (stream-only) |
+| `agent.fee_guard.enabled` | `false` | **`true`** | FeeGuard ENFORCE — repair áp vào production answer |
+| `agent.fee_guard.role_check` | `shadow` | **`enforce`** | Trục vai trò sàn/trần làm `grounded=false` ⇒ kích repair |
+| `general_dispatch.enabled` | `false` | **`true`** | Luồng general vào pool unified + gác đăng ký tool `search_general` |
+| `general_dispatch.blend_into_legal` | `false` | `false` | **Đã lật hai lần** — bật 2026-09-01, lùi 2026-09-02 (§15) |
+| `general.citation_hygiene` | — | `shadow` | Chỉ đếm + ghi log, không sửa answer |
+| `query_rewriting.enabled` | `false` | `false` | Tắt: `llama-cpp-python` không thread-safe |
+| `contextual_condensation.enabled` | `true` | `true` | Tầng C hoạt động |
+
+> **Ba cờ chốt lúc khởi động:** `agentic_rag`, `temporal_guard`, `observability` được đọc **một lần khi khởi động RAG-Core**. Đổi file mà không restart thì tiến trình vẫn giữ giá trị cũ ("đĩa ≠ process"). Biến môi trường `AGENTIC_RAG` có độ ưu tiên cao hơn file.
+
+> **Vì sao `temporal_guard` và `observability` cố ý là section TOP-LEVEL, không nằm trong `agent:`** — cả hai phủ cả hai đường (fast-path + agent). Nếu nhét dưới `agent:` thì fast-path không đọc được cờ và **im lặng không làm gì** — lỗi không có triệu chứng, rất khó phát hiện.
+
+---
+
+## 11. ToolContext — sự thật của lượt (bộ nhớ agent)
+
+Vị trí: `core/agent/tool_context.py` (giai đoạn G2). Đây là một cơ chế nhỏ về dòng code nhưng sửa một lớp lỗi nguy hiểm.
+
+### 11.1 Vấn đề: kênh args do LLM tự sinh (Why)
+
+Kênh duy nhất từ vòng ReAct xuống tool vốn là `args` — **do LLM tự sinh**. Tool nào cần biết câu hỏi gốc của người dùng thì không có cách nào lấy được, chỉ thấy bản diễn giải của LLM.
+
+Bug thật (UAT-FEE-MULTI-01): người dùng hỏi *"…chuyển 200 triệu đồng đi **Vietinbank**…"* nhưng LLM gửi xuống `search_tabular` query `'phí chuyển tiền trong nước liên ngân hàng cá nhân'` — **đã diễn giải mất tên ngân hàng**. Tool suy phạm vi hệ thống từ đúng chuỗi đó ⇒ mọi suy luận về sau chạy trên bản méo của LLM. Fast-path không dính vì luôn truyền `question` gốc.
+
+Nguyên tắc rút ra: **sự thật của lượt đi theo request, không đi theo tham số do LLM sinh.**
+
+### 11.2 Thiết kế `ToolContext` (What + How)
+
+![Hình 6.9 — ToolContext đi song song với args](../png/hinh_6_9_toolcontext.png)
+
+*Hình 6.9 — ToolContext là kênh thứ hai đi song song với args: args mang bản diễn giải của LLM (có thể mất thông tin), còn ToolContext mang câu hỏi GỐC của lượt, đi theo request chứ không qua tay LLM. Tool suy phạm vi/đơn vị từ `ctx.question`, không từ args méo.*
+
+```python
+@dataclass(frozen=True)
+class ToolContext:
+    question: str = ""            # câu hỏi GỐC (đã condense nếu có) của lượt này
+    session_id: Optional[str] = None
+```
+
+Ba quyết định thiết kế:
+
+- **`frozen=True`** — nếu tool sửa được thì tool chạy sau sẽ thấy "câu hỏi gốc" đã bị tool trước bóp méo. Chặn ngay ở tầng ngôn ngữ thay vì dựa vào kỷ luật review.
+- **Là cơ chế chung** — mọi tool nhận `ToolContext` qua `dispatch`, không phải tham số ad-hoc riêng cho `search_tabular`. Thêm tham số riêng cho từng tool sẽ tái diễn đúng lớp lỗi parity đã lặp nhiều lần ở Stage G.
+- **Ở vòng repair phải giữ câu GỐC** — câu truyền cho `loop.run()` khi repair đã bị nối khối `"[YÊU CẦU SỬA] …"`. `ToolContext` phải giữ câu gốc, nếu không chuỗi hint (chứa số tiền, tên tool) sẽ lọt vào suy luận phạm vi/đơn vị.
+
+### 11.3 Bốn chỗ phải nối khi viết tool mới — thiếu một chỗ là hỏng ÂM THẦM
+
+Đây là checklist bắt buộc (rút từ chính quá trình thêm tool thứ 5 `check_validity`), vì mỗi chỗ thiếu gây một lỗi *im lặng* khác nhau:
+
+1. **`build_default_tools()` + `core/agent/__init__.py`** — không nối thì LLM không thấy tool.
+2. **`structured` đủ khóa + thêm nhánh trong `citation_guard._collect_evidence()`.** Thiếu → câu trả lời **đúng** vẫn bị gắn ⚠️ "không tìm thấy căn cứ" (đã xảy ra thật với `check_validity`).
+3. **Nhãn SSE trong `_event_to_step_text()` + map ngược `STEP_TO_TOOL` trong runner eval.** Thiếu → nhãn rơi về "Đang xử lý..." mà runner không map ⇒ `tool_correct` của tool đó **luôn = 0** dù agent gọi đúng ("đỏ giả").
+4. **Tên tool cách mọi tên cũ > 2 Levenshtein** — nếu không `ToolRegistry.get()` fuzzy-match nhầm sang tool khác mà không báo lỗi.
+
+Ngoài ra `temporal_annotator` phân loại tool thành `_TEMPORAL_REF_TOOLS` / `_NOT_TEMPORAL_REF_TOOLS`; tool mới không nằm ở đâu cả sẽ làm test `test_every_registry_tool_is_explicitly_classified` **đỏ** — buộc người thêm tool phải *quyết định* thay vì im lặng thừa kế mặc định. Test khóa cả bốn: `tests/unit/test_tool_registry_h2.py`.
+
+---
+
+## 12. search_tabular nâng cao — filter + effective_date
+
+Vị trí: `core/agent/tools.py` (`SearchTabularTool`, giai đoạn G1/G1.5). Tool `search_tabular` ở khối A–F chỉ bọc `retrieve_tabular()` thuần; giai đoạn G bổ sung hai lớp để đạt **parity với fast-path**.
+
+### 12.1 Vì sao cần parity filter (Why)
+
+Fast-path khi tra biểu phí luôn áp `filters` (nhất là `effective_date`) để loại các dòng đã hết hiệu lực. Agent-path ban đầu thiếu bước này → cùng một câu hỏi, agent có thể kéo về dòng biểu phí cũ mà fast-path đã lọc bỏ. Đây là **lớp lỗi parity** lặp lại 6 lần trong Stage G (agent-path thiếu tham số mà fast-path có).
+
+### 12.2 Hai lớp bổ sung (How)
+
+```python
+# (1) Canonical hóa query — khớp đúng thứ tự fast-path
+effective_query = canonicalize_tabular_query(query, orig_question)
+
+# (2) SUY effective_date từ chính câu hỏi — G1
+#     KHÔNG để LLM tự nghĩ effective_date: phân tích xác định từ câu hỏi
+analysis = self._analyzer.analyze(effective_query)
+if analysis.effective_date:
+    filters["effective_date"] = analysis.effective_date
+```
+
+Hai điểm kỷ luật:
+
+- **Không để LLM tự nghĩ `effective_date`.** Ngày hiệu lực được suy *xác định* bằng `QueryAnalyzer` từ chính câu hỏi (qua `ToolContext.question`, §11), không phải một arg LLM tự điền. Lý do: LLM sinh sai ngày thì toàn bộ filter sai theo, mà lỗi này im lặng.
+- **Phân tích trên `effective_query` (đã canonical), không trên query thô của LLM** — để khớp đúng thứ tự xử lý của fast-path. Nếu phân tích trên hai chuỗi khác nhau, hai đường ra kết quả khác nhau dù cùng câu hỏi.
+
+> **Bẫy "câu simplified mất năm" (đã tài liệu hóa ở DESIGN §4):** `"2023"`/`"2025"` bị `QueryAnalyzer` nhận là *numeric entity*, nên câu sau khi simplify có thể mất luôn năm ⇒ `effective_date = None` ⇒ filter **không bao giờ được áp**. Phải suy `effective_date` **trước** bước bóc numeric entity.
+
+---
+
+## 13. FeeGuard — trục GIÁ TRỊ và VAI TRÒ
+
+Vị trí: `core/agent/fee_guard.py` (giai đoạn I). **agent-scoped** — phí do LLM tự tính chỉ xảy ra ở agent-path; fast-path đọc thẳng từ bảng.
+
+### 13.1 Vì sao CitationGuard không đủ (Why)
+
+CitationGuard trả lời "trích dẫn có tồn tại không". Nó **không** trả lời "con số này có đúng không". Câu trả lời có thể dẫn đúng `code_tab` mà vẫn nêu một con số **không có trong dữ liệu**, hoặc gán **sai vai trò** (nói "tối đa" cho một con số vốn là mức sàn). FeeGuard sinh ra để đóng hai lỗ đó.
+
+### 13.2 Hai trục con: GIÁ TRỊ và VAI TRÒ (What)
+
+![Hình 6.10 — FeeGuard hai trục GIÁ TRỊ và VAI TRÒ](../png/hinh_6_10_fee_guard.png)
+
+*Hình 6.10 — FeeGuard kiểm hai tầng: trục GIÁ TRỊ đối chiếu mọi cặp (đơn vị, số tiền) với tập giá trị hợp lệ trong structured_trace; trục VAI TRÒ kiểm số đó là sàn hay trần và thuộc đúng dòng nào. Đơn vị suy từ câu hỏi, tuyệt đối không quy đổi tỉ giá.*
+
+**Trục GIÁ TRỊ (GH-11):** `extract_amounts(text, units)` rút mọi cặp `(đơn vị, giá trị)` từ câu trả lời, đối chiếu với tập giá trị hợp lệ gom từ `structured_trace`. Số không có căn cứ → `ungrounded` → repair.
+
+**Trục VAI TRÒ (issue-3):** kiểm con số là **sàn** hay **trần**, và thuộc **dòng nào**. Hai lớp lỗi mà bản GIÁ TRỊ đơn thuần bỏ lọt (cả hai đều `grounded=true` nếu chỉ hỏi "giá trị có tồn tại đâu đó không"):
+
+| Lỗi | Ví dụ |
+|---|---|
+| Sai VAI TRÒ | "tối đa 2 USD" trong khi 2 là `FN1` — **mức SÀN** |
+| Sai QUY THUỘC | "tối đa 200.000" gán cho `E1/F1`, nhưng 200.000 là trần của `PHI-DCTC/BF` — **dòng khác** |
+
+Cơ chế ghép: **tách tập sàn/trần** là *phép kiểm*, **`filter_cited_tabular_sources`** là *miền* của phép kiểm (chỉ xét các dòng thật sự được trích trong câu trả lời).
+
+### 13.3 Bốn kỷ luật cứng của FeeGuard (How)
+
+- 🔴 **Đơn vị không mặc định VNĐ.** `AMOUNT_CCY = "VNĐ"` chỉ là mặc định, không phải chân lý. Đơn vị số tiền là thuộc tính của **giao dịch người dùng hỏi**, suy từ chính câu hỏi (`ComputeTool._infer_amount_ccy`). Trước đây hằng số cứng làm mọi biểu phí ngoại tệ bị từ chối vô điều kiện. **Tuyệt đối không quy đổi tỉ giá** — `FN1` đo bằng `FT4`, `FN2` đo bằng `FT5`; gán bừa VNĐ cho `FN1` của dòng USD sẽ cho phép answer viết "2 đồng" mà vẫn xanh.
+- 🔴 **"Không có trần" là ca đa số.** 716/980 dòng (73%) có `FN2 = NULL`. Observation phải nói rõ "không quy định"; im lặng về ô rỗng là mời LLM tự điền.
+- 🔴 **Hint lỗi vai trò tách khỏi hint lỗi giá trị.** Vai trò sai đòi **XOÁ VẾ** (bỏ mệnh đề "tối đa/tối thiểu" sai), không phải **THAY SỐ**. Dùng chung một hint sẽ đẻ ra một mức trần sai khác.
+- 🔴 **Chọn dòng để tính phải BẤT ĐỐI XỨNG** (`_pick_fee_row`, issue-4). `CALC_FEE` không được dùng `items[0]` mù quáng. Luật: **rời** hạng 1 chỉ khi nó có bound ở đơn vị khác; **chuyển sang** ứng viên khác chỉ khi ứng viên có bound đúng đơn vị **và** nằm trong top-3. Giữ nhầm thì `calc_fee` tự từ chối (vô hại); chuyển nhầm thì ra số của dịch vụ khác (không ai bắt được).
+
+> **Cờ `role_check`: `off | shadow | enforce`.** Đã flip `shadow → enforce` **sau khi đo**: chạy toàn bộ corpus 41 câu ở shadow → **0 role_violations** trên 18 câu agentic (0 false-positive), `role_scope=cited` ở 8/18 câu. Vì violations = 0, `enforce` hành xử y hệt `shadow` trên corpus này ⇒ chi phí thêm = 0. Quay về `shadow` nếu thấy repair chạy oan trên lưu lượng thật.
+
+> **Khoảng trống dữ liệu đã CHỐT (2026-08-03) — đừng "sửa" bằng code:** `PHI-CANHAN` không có dòng nào cho "chuyển tiền đi khác hệ thống một lần thông thường". Chủ dự án chốt: **TỪ CHỐI là hành vi ĐÚNG**. Muốn trả lời đầy đủ thì **bổ sung dòng biểu phí**, không sửa code ép mô hình dùng dòng lệch điều kiện. Chi tiết → `UAT/TEST-cau_hoi_ve-phi.md` §5.8.
+
+### 13.4 Schema `agent_meta.fee_guard`
+
+⚠️ `checked` / `valid_fees` / `ungrounded` là **chuỗi** (`"40.000 VNĐ"`), không phải `int`. Mọi nơi đọc (đặc biệt `agentic_eval_scorer.py`) phải theo đúng kiểu này.
+
+---
+
+## 14. Trục HIỆU LỰC — check_validity + TemporalGuard
+
+Giai đoạn H bổ sung trục thứ ba: kiểm **hiệu lực pháp lý** của văn bản. Gồm tool thứ 5 `check_validity` (§14.1) trả lời câu hỏi trực tiếp, và TemporalGuard (§14.3) tự động cảnh báo khi câu trả lời dựa trên văn bản đã hết hiệu lực.
+
+### 14.1 `check_validity` — tool thứ 5 (What)
+
+Vị trí: `core/agent/tools.py` (`CheckValidityTool`, H2). Trả lời "văn bản này CÒN HIỆU LỰC không?" — thứ CitationGuard không trả lời được. **Hai bước**, không phải wrapper thuần:
+
+![Hình 6.11 — check_validity: resolve rồi wrap, ba ca khuyết](../png/hinh_6_11_check_validity.png)
+
+*Hình 6.11 — check_validity gồm hai bước: RESOLVE doc_ref (chuỗi LLM sinh) về document_id — phần dễ sai nhất — rồi WRAP get_document_temporal. Ba ca khuyết A/B/C phân biệt tường minh bằng cặp (found, reason); ca C (không xác định) tuyệt đối không trả 'active'.*
+
+**① Resolve** ghép hai hàm đã có, mỗi hàm bù đúng chỗ hổng của hàm kia:
+
+| Đầu vào | `doc_key` đơn lẻ | `LIKE '%doc_ref%'` |
+|---|---|---|
+| `"TT 15/2024"` | ❌ trượt (DOC_KIND không chứa TT) | — |
+| `"Thông tư số 15/2024"` | — | ❌ trượt (chữ "số" nằm giữa) |
+
+⇒ dùng `doc_key(_normalize_abbrevs(doc_ref))` rồi tra qua index `{doc_key(title) → document_id}` — đúng pattern của `backfill_legal_temporal.py`, nên hai đường luôn khớp nhau.
+
+**② Wrap** `SQLiteManager.get_document_temporal(document_id)` (H1 — schema temporal).
+
+Ba ca khuyết phân biệt bằng `found` + `reason`, **tuyệt đối không trộn**:
+
+| Ca | Điều kiện | Kết quả |
+|---|---|---|
+| A | có trong index, `legal_status='active'` | `found=True`, đủ field |
+| B | có trong index, `effective_date=NULL` | `found=True`, field ngày = `None`, nói thẳng "Không rõ ngày hiệu lực" |
+| C | không có trong index / không parse được / khớp >1 VB | `found=False`, **mọi** field = `None` |
+
+> 🔴 **Ca C tuyệt đối không trả `legal_status='active'`.** "Không có trong index" ≠ "còn hiệu lực". Closed-world: văn bản không có trong index thì **không tồn tại** với hệ thống, không phải "mặc định còn sống". Trả nhầm sẽ khiến TemporalGuard im lặng về mọi văn bản chưa index. Khớp >1 văn bản → không đoán, trả ca C.
+
+### 14.2 Vì sao `check_validity` là tool riêng, không nhập vào `fetch_article`
+
+Hai câu hỏi khác bản chất: `fetch_article` hỏi "*nội dung* Điều X là gì" (đọc MongoDB), `check_validity` hỏi "văn bản còn *hiệu lực* không" (đọc bảng temporal SQLite). Gộp lại sẽ trộn hai nguồn dữ liệu và hai closed-world khác nhau. Tách riêng cũng cho phép agent hỏi hiệu lực **mà không cần** kéo toàn văn Điều về prompt (tiết kiệm context của model nhỏ).
+
+### 14.3 TemporalGuard — tự động chèn cảnh báo (How)
+
+Vị trí: `core/temporal_annotator.py` — **cố ý ở `core/`, không ở `core/agent/`**, vì trục này phủ cả hai đường (agent + fast-path). Viết hai bản riêng = đúng lớp lỗi parity đã lặp 6 lần ở Stage G.
+
+![Hình 6.12 — TemporalGuard hai nguồn document_id, dùng chung hai đường](../png/hinh_6_12_temporal_guard.png)
+
+*Hình 6.12 — TemporalGuard gom document_id từ hai nguồn (sources thường + structured_trace của check_validity), tra legal_status, và chỉ chèn khối ⚠️ khi status thuộc whitelist {expired, amended, draft}. Khối chỉ CHÈN THÊM ở cuối, không xoá nội dung gốc; agent và fast-path dùng chung một luật.*
+
+Bốn kỷ luật:
+
+- **Nguồn dữ liệu là `sources[].document_id`, KHÔNG parse số hiệu từ text answer.** `document_id` là khóa nội bộ chính xác tuyệt đối, không dính bẫy "doc_ref không dấu".
+- **`FLAGGED_STATUSES = {expired, amended, draft}` là whitelist.** Viết `if status != 'active'` sẽ biến mọi giá trị lạ (dữ liệu hỏng, migration dở) thành cảnh báo vô nghĩa.
+- **Chỉ CHÈN THÊM khối ⚠️ ở cuối, không xoá nội dung gốc** — cán bộ đôi khi cần tra văn bản cũ (tranh chấp hợp đồng ký theo quy định cũ).
+- **`enabled=false` = shadow:** vẫn tính flag, vẫn ghi log, chỉ không chèn. Trường `checked` trong log là thứ phân biệt "chạy đúng, không có gì cảnh báo" với "code chưa chạy".
+
+**`TEMPORAL_BLOCK_MARKER = "⚠️ HIỆU LỰC VĂN BẢN:"` là HỢP ĐỒNG.** Eval scorer nhận diện "answer có cảnh báo hiệu lực không" bằng **chuỗi cố định** này, không bằng regex "hiệu lực" chung chung (câu trả lời bình thường rất hay chứa "Thông tư này có hiệu lực từ ngày…" → regex mơ hồ đếm nhầm thành cảnh báo). Scorer **import chính hằng số này**, không hardcode lần hai. Đổi chuỗi = đổi hợp đồng.
+
+### 14.4 Nguồn thứ hai — vì sao cần (I0/GH-1)
+
+`check_validity` trả `structured` nhưng **không sinh source** (`_collect_sources` chỉ đọc `search_legal` + `fetch_article`). Câu trả lời dựng thuần từ nó có `sources` rỗng ⇒ nằm ngoài trục hiệu lực (đó là GH-1: `N5_d_001` trả lời đúng mà không mang khối cảnh báo, 3/3 lượt). Giải pháp: `collect_referenced_doc_ids(structured_trace)` rút `document_id` từ tool trong whitelist `_TEMPORAL_REF_TOOLS = {check_validity}`.
+
+Whitelist là **opt-in tường minh**, không duyệt bừa mọi `document_id` gặp được: tool *nhắc tới* một VB không đồng nghĩa VB đó *chống lưng* câu trả lời — duyệt bừa sẽ phá `temporal_false_positive_rate = 0`.
+
+### 14.5 Lịch sử hội thoại KHÔNG chứa khối ⚠️ (I0-b / GH-9)
+
+Agent-path chụp `answer_for_history` **trước** khi `_apply_temporal_guard` gán đè `final_answer`. Fast-path thì handler lưu session ở bước 4, phát `done` ở bước 5, nên khối ⚠️ tự nhiên không vào lịch sử. **Hai đường cùng hành vi — đúng thiết kế:** annotation là cảnh báo hiển thị; nhét vào ngữ cảnh condense lượt sau chỉ làm nhiễu prompt và ăn `max_context_tokens`.
+
+---
+
+## 15. General dispatch + saga blend_into_legal
+
+Giai đoạn GENERAL bổ sung luồng trả lời cho **văn bản chung** (general documents — không phải văn bản pháp lý điều/khoản, cũng không phải biểu phí), qua công tắc `general_dispatch`.
+
+### 15.1 Hai chế độ (What)
+
+![Hình 6.13 — General dispatch và saga blend](../png/hinh_6_13_general_blend.png)
+
+*Hình 6.13 — general_dispatch đưa nội dung general vào pool unified (fast-path qua include_general, agent-path qua tool search_general). Cờ blend_into_legal quyết định general trả riêng hay trộn vào prompt legal; hiện đang LÙI về false vì không corpus nào thực sự chạm được nhánh blend.*
+
+- **`general_dispatch.enabled=true`** (production): nội dung general vào pool unified; fast-path nhận qua tham số `include_general`, agent-path nhận qua tool `search_general`.
+- **`blend_into_legal`**: nếu `true` thì trộn nội dung general vào *cùng prompt* với nội dung legal; nếu `false` thì general trả riêng, không trộn.
+
+### 15.2 Saga blend_into_legal — lật hai lần (Why + lesson)
+
+Đây là một ca học kinh nghiệm điển hình về **đo trước khi kết luận**. `blend_into_legal` được **bật 2026-09-01, rồi lùi về `false` 2026-09-02**.
+
+> 🔴 **Lùi KHÔNG phải vì blend gây hại, mà vì KHÔNG CORPUS NÀO CHẠY ĐƯỢC NÓ.** Đo trên toàn kho, số câu blend thực sự *chạm được* chỉ khoảng 6/160, và sàn nhiễu đo lại được là ≥ 3,3 — tức tín hiệu không vượt nổi nhiễu. Lý do phân bố: nhóm G1 (0/30) bị tầng B.5 vứt pool; nhóm G2 (0/23) toàn clarification trả sớm; chỉ G3 chạm 6/30; các nhóm khác n_general = 0 hoặc đi agent-path (vốn không blend).
+
+Bài học ba mệnh đề đúng nhưng giao của chúng là một lỗ: blend *phục vụ* câu hỗn hợp · router *gửi* câu hỗn hợp sang agent (tín hiệu `multi_clause`) · agent *không* blend. ⇒ Đúng lớp câu blend sinh ra để phục vụ lại là lớp câu nó **không bao giờ chạm tới**. Không tài liệu nào sai — sai nằm ở **giao ba đặc tả**, chỗ không giai đoạn nào sở hữu.
+
+### 15.3 Điều kiện mở lại (How)
+
+Muốn bật lại `blend_into_legal` phải mở **một** trong hai cửa (mỗi cửa một PLAN riêng):
+- **(a)** cho general sống sót qua tầng B.5 (nhánh đang phục vụ 30/30 câu G1 — bề mặt rủi ro rộng);
+- **(b)** cho agent-path tự dựng khối nội bộ (`core/agent/*` không dùng `PromptBuilder`).
+
+`general.citation_hygiene: shadow` — hiện chỉ đếm + ghi log, không sửa answer (sẽ theo kỷ luật `role_check` khi chuyển `enforce`). Chi tiết → `UPGRADE/GENERAL/RESULT_IMPL_Blend_A.md`.
+
+---
+
+## 16. Observability + kỷ luật chống "xanh giả"
+
+### 16.1 Metric phạm vi agent (J4-b)
+
+Vị trí: `core/observability/metrics_agent.py`. Section config **top-level** `observability:` (cùng lý do với `temporal_guard`: phủ cả hai đường).
+
+![Hình 6.14 — Observability: hai điểm cắm, metric stream-only](../png/hinh_6_14_observability.png)
+
+*Hình 6.14 — Metric phát ở hai điểm cắm (fast-path qua _with_temporal_guard, agent-path qua interceptor 'done'), mọi lời gọi đi qua _safe_emit nên lỗi metric không làm hỏng request. Nhãn dispatch_path có miền đóng; giá trị lạ bị _clamp() về 'unknown'.*
+
+| Metric | Nhãn | Ghi chú |
+|---|---|---|
+| `rag_dispatch_total` | `dispatch_path`, `transport` | Phân bố route |
+| `rag_request_duration_seconds` | `dispatch_path`, … | p95 theo route |
+| `rag_fee_number_grounded_total` | `grounded` | **Chỉ agent-path** (fast-path không có FeeGuard) |
+| `rag_temporal_marker_emitted_total` | — | Đếm **marker thô**, không phải recall |
+| `rag_metric_emit_errors_total` | `point` | Tự kiểm: lỗi emit đã bị nuốt |
+
+Bốn kỷ luật:
+
+- **`dispatch_path ∈ {unified, legacy, agentic, unknown}` — miền nhãn đóng.** Giá trị lạ bị `_clamp()` về `unknown` và tăng `dispatch_label_clamped`.
+- **Phạm vi STREAM-ONLY** (`transport="stream"`). Đường non-stream không sinh đối tượng metrics.
+- **Mọi emit đi qua `_safe_emit(point, fn)`** — lỗi metric không bao giờ làm hỏng request.
+- **`_route` là DICT, không phải chuỗi.** Route bị ghi đè *sau khi* đã truyền đi (`unified → legacy`, `agentic → fallback`). Một snapshot chuỗi sẽ báo "unified" cho một lượt thực chạy legacy. Phải đọc `_route` **tại thời điểm phát `done`**.
+
+> **Vì sao không đọc thẳng `metrics.dispatch_path`:** `QueryMetrics` là gói instrumentation *tùy chọn*, import trong `try/except`. Môi trường không có `performance_evaluation/` ⇒ `metrics=None` ⇒ mọi series rơi về `"unknown"` trong im lặng — dashboard vẫn có số, vẫn trông hợp lý, và hoàn toàn vô nghĩa. `"unknown"` chỉ nên xuất hiện khi thật sự không xác định được route, không phải khi một gói dev vắng mặt.
+
+Ngưỡng cảnh báo tách hai loại (RS-J4-1): *suy ra được từ thiết kế, khác 0 báo ngay* (`rag_metric_emit_errors_total > 0`, `dispatch_label_clamped > 0`, lệch `sum(rag_dispatch_total)` vs `rag_chat_requests_total{status="ok"}`); *cần số thật, hoãn tới khi có ≥2 tuần dữ liệu* (p95 theo route, tỷ lệ `fee_number_grounded{false}`).
+
+### 16.2 Chống "xanh giả" — kỷ luật đo lường (A.14)
+
+Bốn lần gate được tuyên bố đạt mà phép đo **không chạy thật** — mỗi lần một cơ chế lừa khác nhau:
+
+![Hình 6.15 — Bốn cửa kiểm chống xanh giả](../png/hinh_6_15_anti_green.png)
+
+*Hình 6.15 — Trước khi tuyên bố gate đạt phải qua bốn cửa kiểm, mỗi cửa ứng với một lần trượt thật (G1, G1.5, G2, G3): test có được thu thập không, kết quả rỗng có phân biệt "lọc đúng" với "chưa index" không, corpus tham chiếu có tồn tại không, và test parity có liệt kê đủ call site bằng AST không.*
+
+| Giai đoạn | Triệu chứng | Nguyên nhân |
+|---|---|---|
+| G1 | gate xanh | test nằm ngoài `testpaths` → `collected 0 items` |
+| G1.5 | "filter hoạt động" | kết quả rỗng do **chưa index BM25**, không phải do lọc đúng |
+| G2 | gate xanh | gate trỏ nhóm eval `G5` **không tồn tại** |
+| G3 | parity xanh | test parity chỉ phủ **2/4** đường gọi |
+
+**Quy tắc:** trước khi tuyên bố đạt gate phải chứng minh phép đo CHẠY THẬT — `collected N items > 0` · kết quả rỗng phải phân biệt "lọc đúng" vs "chưa index" · gate tham chiếu corpus phải verify corpus tồn tại · test parity phải liệt kê đủ call site bằng **AST**, không dựa trí nhớ hay regex.
+
+> **Bẫy log liên quan:** gate dựa trên log phải kiểm dòng đó thật sự xuất hiện trong `rag-core/logs/generation.log`. `setup_logging()` **không bao giờ** được đặt `propagate = False` — làm vậy cắt toàn bộ cây `rag_legal.*` khỏi handler ROOT ⇒ mọi dòng log nghiệp vụ rời khỏi `generation.log` ⇒ gate không đo được. Đã xảy ra thật ở G2 và G3.
+
+### 16.3 Eval mở rộng — nhóm N5 (hiệu lực) và corpus fee-calc
+
+Bộ eval A–F có 4 nhóm N1–N4 (§8). Các giai đoạn sau bổ sung:
+- **Nhóm N5 (temporal):** đo trục hiệu lực — câu hỏi về văn bản đã hết hiệu lực phải mang khối ⚠️; `temporal_false_positive_rate` (văn bản còn sống bị gắn nhầm) phải = 0.
+- **Corpus fee-calc (Stage I):** các ca tính phí có đáp án vàng về *con số* và *vai trò* sàn/trần, để đo FeeGuard.
+- **Feedback → eval (Stage J1):** pipeline gom câu trả lời bị đánh giá xấu từ log thật thành ứng viên bổ sung corpus.
+
+Kỷ luật đo chung: mọi gate chạy **≥3 vòng** vì `temperature=0.1` không seed (phi tất định); báo cáo **per-group**, không chỉ aggregate; gate phải đi kèm metric bù để tránh "xanh nhờ gaming".
+
+---
+
+## 17. ADR nâng cao (giai đoạn G–J)
+
+Bổ sung cho 8 ADR nền tảng ở §9. Mỗi ADR: Quyết định / Lý do / Đánh đổi / Khi nào nên đổi.
+
+### ADR-6.9 — Ba trục Guard vuông góc, phạm vi khác nhau
+
+- **Quyết định:** Ba Guard độc lập (CitationGuard agent-scoped, FeeGuard agent-scoped, TemporalGuard top-level), chạy nối tiếp.
+- **Lý do:** Mỗi trục trả lời một câu hỏi khác nhau (tồn tại / giá trị-vai trò / hiệu lực); không trục nào thay được trục nào. Hiệu lực là rủi ro của cả fast-path nên phải top-level.
+- **Đánh đổi:** Ba lượt kiểm nối tiếp tăng độ trễ agent-path; TemporalGuard top-level phải cẩn thận parity hai đường.
+- **Khi nào nên đổi:** Không gộp ba trục. Thêm trục mới (vd đơn vị đo) thì theo đúng khuôn: phạm vi rõ, marker hợp đồng, shadow trước enforce.
+
+### ADR-6.10 — ToolContext: sự thật của lượt đi theo request
+
+- **Quyết định:** Câu hỏi gốc truyền xuống tool qua `ToolContext` (frozen), không qua `args` do LLM sinh.
+- **Lý do:** LLM diễn giải mất thông tin (tên ngân hàng, đơn vị tiền) → tool suy sai phạm vi. Fast-path không dính vì luôn có `question` gốc.
+- **Đánh đổi:** Mọi tool phải nhận thêm tham số context; vòng repair phải cẩn thận giữ câu gốc (không dính hint).
+- **Khi nào nên đổi:** Không. Đây là cơ chế chung chống cả một lớp lỗi parity.
+
+### ADR-6.11 — Không quy đổi tỉ giá; đơn vị suy từ câu hỏi
+
+- **Quyết định:** FeeGuard lấy đơn vị tiền từ câu hỏi/dữ liệu, tuyệt đối không quy đổi tỉ giá; `FN1↔FT4`, `FN2↔FT5`.
+- **Lý do:** Quy đổi tỉ giá đưa vào một nguồn sai số và một tỉ giá "tại thời điểm nào?" không xác định; gán bừa VNĐ cho dòng ngoại tệ tạo số sai im lặng.
+- **Đánh đổi:** Câu hỏi ngoại tệ mà dữ liệu chỉ có VNĐ (hoặc ngược lại) → từ chối, không đoán.
+- **Khi nào nên đổi:** Không. Muốn hỗ trợ ngoại tệ thì bổ sung dòng biểu phí ngoại tệ, không thêm logic quy đổi.
+
+### ADR-6.12 — check_validity là tool riêng; ca C không bao giờ "active"
+
+- **Quyết định:** Tách `check_validity` khỏi `fetch_article`; ba ca A/B/C phân biệt tường minh; ca C (không xác định) trả `found=False`, mọi field `None`.
+- **Lý do:** Hai câu hỏi khác nguồn dữ liệu (nội dung MongoDB vs hiệu lực SQLite). Closed-world: "không có trong index" ≠ "còn hiệu lực".
+- **Đánh đổi:** Thêm một tool = thêm 4 chỗ phải nối (§11.3); model nhỏ phải học khi nào gọi tool nào.
+- **Khi nào nên đổi:** Không nới ca C thành "active". Khớp >1 VB thì trả ca C, không đoán.
+
+### ADR-6.13 — TemporalGuard dùng document_id, không parse text; marker là hợp đồng
+
+- **Quyết định:** Gom hiệu lực theo `sources[].document_id` (+ nguồn thứ hai từ `check_validity`), không parse số hiệu từ answer; nhận diện khối bằng hằng `TEMPORAL_BLOCK_MARKER`.
+- **Lý do:** `document_id` chính xác tuyệt đối; regex "hiệu lực" chung chung đếm nhầm câu bình thường thành cảnh báo.
+- **Đánh đổi:** Tool không sinh source (như `check_validity`) phải được whitelist tường minh làm nguồn thứ hai.
+- **Khi nào nên đổi:** Đổi marker = đổi hợp đồng với scorer, phải sửa đồng thời hai nơi (import chung, không hardcode lần hai).
+
+### ADR-6.14 — general_dispatch bật, blend_into_legal tắt (đo trước khi kết luận)
+
+- **Quyết định:** `general_dispatch.enabled=true` nhưng `blend_into_legal=false` (đã lật hai lần rồi lùi).
+- **Lý do:** Đo thật cho thấy chỉ ~6/160 câu chạm được nhánh blend, dưới sàn nhiễu ≥3,3 — không đủ tín hiệu để bật, trong khi bề mặt rủi ro rộng.
+- **Đánh đổi:** Câu hỗn hợp không được blend general vào prompt legal (đi agent-path xử lý riêng).
+- **Khi nào nên đổi:** Mở lại khi một trong hai cửa (general sống qua B.5, hoặc agent-path tự dựng khối) hoàn tất theo PLAN riêng, kèm corpus đo được tín hiệu vượt nhiễu.
+
+### ADR-6.15 — Guard/observability top-level, shadow trước enforce
+
+- **Quyết định:** `temporal_guard` và `observability` là section top-level (không dưới `agent:`); mọi Guard mới chạy `shadow` (đo) trước khi `enforce`.
+- **Lý do:** Trục phủ cả hai đường mà nhét dưới `agent:` thì fast-path im lặng không chạy — lỗi không triệu chứng. Shadow-trước-enforce cho phép đo false-positive trên corpus thật trước khi để Guard sửa answer production.
+- **Đánh đổi:** Thêm một section config top-level; giai đoạn shadow tốn thời gian trước khi thu lợi.
+- **Khi nào nên đổi:** Không hạ cấp thành agent-scoped. Chỉ flip enforce sau khi đo 0 (hoặc chấp nhận được) false-positive ≥3 vòng.
+
+### ADR-6.16 — Chống "xanh giả": phép đo phải chứng minh chạy thật
+
+- **Quyết định:** Trước khi tuyên bố gate đạt phải chứng minh `collected > 0`, phân biệt rỗng-do-lọc vs rỗng-do-chưa-index, verify corpus tồn tại, và liệt kê call site bằng AST.
+- **Lý do:** Bốn lần gate xanh giả thực tế (G1, G1.5, G2, G3), mỗi lần một cơ chế lừa khác nhau.
+- **Đánh đổi:** Mỗi gate tốn thêm bước tự chứng minh; chậm hơn nhưng đáng tin.
+- **Khi nào nên đổi:** Không. Đây là kỷ luật nền của toàn bộ công tác đo lường; nới ra là mời xanh giả quay lại.
+
+---
+
+## 18. Tổng kết
+
+Phần 6 tài liệu hóa bản nâng cấp Agentic RAG qua hai khối. **Khối nền tảng A–F** (§2–§9, 125 test pass, deploy 2026-06-09) bổ sung khả năng trả lời câu hỏi đa bước qua vòng lặp ReAct + 4 tool + CitationGuard + Router, bọc sau công tắc `agentic_rag`. **Khối nâng cao G–J** (§10–§17) thêm hai trục Guard mới (FeeGuard cho trục GIÁ TRỊ/VAI TRÒ, TemporalGuard cho trục HIỆU LỰC), tool thứ 5 `check_validity`, cơ chế `ToolContext` chống méo thông tin, parity filter cho `search_tabular`, luồng general dispatch, observability Prometheus, và một bộ kỷ luật đo lường chống "xanh giả".
+
+Ba ràng buộc cứng được giữ trọn qua mọi giai đoạn: **không hallucinate** (nay là ba trục Guard, không chỉ CitationGuard), **phạm vi đóng kín** (5 tool, không web — `check_validity` vẫn chỉ đọc index nội bộ), **độc lập backend** (ReAct prompt-based). Nguyên tắc bao trùm — *LLM được tự do về điều hướng, nhưng bị kỷ luật về trích dẫn, giá trị và hiệu lực* — mở rộng tự nhiên từ khối A–F sang G–J.
+
+Ba kỷ luật vận hành xuyên suốt, đáng ghi nhớ cho mọi thay đổi về sau: (1) **cờ phủ hai đường phải top-level**, nhét dưới `agent:` thì fast-path im lặng; (2) **shadow trước enforce**, chỉ flip sau khi đo 0 false-positive ≥3 vòng; (3) **đo trước khi kết luận** — cả saga `blend_into_legal` lẫn bốn lần "xanh giả" đều là bài học rằng gate xanh trong một cấu hình không phải gate xanh.
+
+> **Hết Phần 6 — Nâng cấp Agentic RAG.** Phần này là mở rộng của Phần 2 §4 (Phase 3 — Generation). Tài liệu kỹ thuật sâu hơn cho lập trình viên: `rag-core/phase3_generation/core/agent/GUIDE_AGENTIC.md` và `phase3_generation/DESIGN.md` (§A.0–A.14).

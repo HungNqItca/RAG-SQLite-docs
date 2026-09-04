@@ -1,0 +1,8 @@
+flowchart TB
+    Q["Câu hỏi"] --> UNI["unified pool<br/>general_dispatch.enabled=true"]
+    UNI --> GEN["search_general (agent-path)<br/>+ include_general (fast-path)"]
+    GEN --> BL{"blend_into_legal?"}
+    BL -->|"false (ĐANG LÙI)"| SEP["general trả riêng<br/>KHÔNG trộn vào prompt legal"]
+    BL -->|"true (đã lùi 2026-09-02)"| MIX["trộn general vào prompt legal"]
+    SEP -.->|"lý do lùi"| WHY["không corpus nào chạm blend:<br/>B.5 vứt pool · clarification trả sớm<br/>· agent-path không blend"]
+    MIX -.->|"cần mở 1 trong 2 cửa"| DOOR["(a) general sống qua B.5<br/>(b) agent-path tự dựng khối"]

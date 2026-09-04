@@ -1,0 +1,7 @@
+flowchart TB
+    T0["t_start — bắt đầu xử lý request"] --> T1["[1] classification_done<br/>sau ContentTypeClassifier"]
+    T1 --> T2["[2] slot_detection_done<br/>chỉ legal (NULL cho tabular)"]
+    T2 --> T3["[3] condense_done<br/>chỉ tabular (NULL cho legal)"]
+    T3 --> T4["[4] rewrite_done<br/>NULL nếu rewriting tắt"]
+    T4 --> T5["[5] retrieval_done<br/>sau BM25 + Vector + Rerank"]
+    T5 -.->|"tiếp → Hình 7.2b"| NEXT["giai đoạn dựng prompt + LLM"]

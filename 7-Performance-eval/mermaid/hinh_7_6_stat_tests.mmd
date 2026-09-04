@@ -1,0 +1,9 @@
+flowchart TB
+    D["Dữ liệu latency/quality<br/>(phân phối KHÔNG chuẩn)"] --> WHY["Chọn test phi tham số<br/>không giả định phân phối"]
+    WHY --> P["Percentile p50/p95/p99<br/>(latency summary)"]
+    WHY --> MW["Mann-Whitney U<br/>RAG vs Vanilla"]
+    WHY --> CD["Cliff's delta<br/>effect size (magnitude)"]
+    WHY --> KW["Kruskal-Wallis<br/>G1..G6 (ANOVA phi tham số)"]
+    WHY --> SP["Spearman ρ<br/>concurrency ↔ latency"]
+    WHY --> BS["Bootstrap CI<br/>1000 resamples, seed=42"]
+    CD -.->|"Romano 2006"| TH["negligible<0.147<small<0.33<medium<0.474<large"]

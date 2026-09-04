@@ -34,7 +34,15 @@ Bộ khung tổng thể của 3 phase đã được trình bày ở **Phần 1 �
 
 Phase 1 chịu trách nhiệm **nhập liệu (ingestion)** tài liệu vào hệ thống RAG. Đây là phase duy nhất chạy **offline** — chỉ kích hoạt khi có file mới cần ingest, hoặc khi cần rebuild lại BM25 index sau một đợt thêm/sửa nhiều file.
 
-Phase 1 gồm **hai pipeline song song và độc lập** — phục vụ hai loại dữ liệu rất khác nhau về cấu trúc:
+Phase 1 gồm **ba pipeline song song và độc lập** — phục vụ ba loại dữ liệu rất khác nhau về cấu trúc. Ba pipeline **tách hẳn nhau ở mọi tầng**: bảng SQLite riêng, index BM25 riêng, và (với legal/general) collection ChromaDB riêng — không JOIN chéo, không dùng chung bảng thống kê BM25.
+
+| Pipeline | Nguồn | Đích lưu | Đã nạp (đo 2026-09-03) |
+|---|---|---|---|
+| **1a legal** | `.docx` / `.txt` / `.pdf` | MongoDB + ChromaDB `legal_clauses` + SQLite `chunks` | 5 VB · 460 chunk |
+| **1b tabular** | `.xlsx` biểu phí/lãi suất | SQLite `TABULAR_*` (**không** MongoDB, **không** Chroma) | 980 dòng · 4 TYPE_TAB |
+| **1c general** | `.md` (convert từ `.docx`/`.pdf`) | SQLite `general_*` + ChromaDB `general_chunks` | 4 tài liệu · 396 chunk |
+
+> **Lưu ý về pipeline general (1c):** đây là luồng được bổ sung sau (giai đoạn GENERAL) để xử lý **tài liệu nội bộ không có cấu trúc Điều–Khoản** (sổ tay, hướng dẫn, công văn, báo cáo). Điểm khác biệt quan trọng ở tầng truy hồi: **luồng general KHÔNG đi qua `ContentTypeClassifier`** — nó vào cùng pool ở `retrieve_unified_sync()` và **giành handler bằng rerank**, được gác bởi cờ `general_dispatch.enabled` (xem Phần 6 §15 và §3 dưới đây).
 
 #### 2.1.1 Pipeline Legal — Văn bản pháp lý có cấu trúc phân cấp
 
@@ -52,7 +60,21 @@ Pipeline Tabular xử lý dữ liệu dạng bảng từ Excel — biểu phí, 
 
 *Hình 2.1b — Pipeline Tabular: hai nguồn input (YAML định nghĩa type + Excel chứa data) hội tụ tại `load_tabular_data.py`, sau đó qua các bước build search_text + vector embedding rồi ghi vào TABULAR_DATA. File `tabular_reload_signal.txt` cuối cùng cho phép server runtime tự reload mà không cần restart.*
 
-#### 2.1.3 Thành phần chính của Phase 1
+#### 2.1.3 Pipeline General — Tài liệu nội bộ không có cấu trúc Điều–Khoản
+
+Pipeline General xử lý sổ tay, hướng dẫn, công văn, báo cáo — thứ **không** có cấu trúc Điều–Khoản. Vì `.docx`/`.pdf` không mang cấp bậc heading đáng tin, luồng này **convert sang `.md` trước** (cấp bậc heading trở thành *dữ liệu do người soạn khai*, không phải suy luận), rồi mới ingest. Đích lưu: SQLite `general_*` + ChromaDB `general_chunks` + BM25 index riêng.
+
+![Hình 2.1c — Pipeline General: từ .docx/.pdf → convert .md → SQLite general_* + ChromaDB + BM25 riêng](../png/hinh_2_1c_general_pipeline.png)
+
+*Hình 2.1c — Pipeline General: tài liệu gốc convert sang `.md` (cấp bậc heading do người soạn khai), qua `ingest_general_docs.py` (một lệnh: backup → dry-run + xác nhận → nạp → rebuild BM25 một lần → cổng H-1…H-16), rồi `GeneralDocumentSplitter` cắt section lá thành chunk, ghi vào SQLite `general_*` + ChromaDB `general_chunks` + BM25 riêng. Nạp xong phải restart RAG Core để BM25 corpus stats cập nhật.*
+
+**Ba ràng buộc riêng của luồng general (đã đo khi nạp thật):**
+
+- **Dedup theo `source_checksum`, KHÔNG theo `checksum`.** `general_documents` có hai trục định danh: `checksum`/`file_name` bám tệp `.md` đem ingest, còn `source_checksum`/`source_file_name` bám tệp **gốc** người dùng nhận biết. Cùng một `.docx` convert lại bằng công cụ khác → `.md` khác → `checksum` khác → dedup không nhận ra → nạp trùng. `source_checksum` (sha256 tệp gốc) mới là trục dedup thật.
+- **`doc_family` tự nhận KHÔNG đáng tin — phải khai tường minh.** Đo lúc nạp: sai 2/4 (tiêu ngữ hành chính `Số:`, `V/v` của văn bản Việt Nam thường nằm trong bảng, mà bộ nhận diện chỉ quét block đoạn văn). Đã vá lên 3/4; ca còn lại (báo cáo gửi bằng đường công văn) phải khai qua `--doc-family`/`--csv`.
+- **Ba điều KHÔNG được chép từ khuôn legal sang general:** (1) `INSERT OR REPLACE` vào `general_documents` gây FK CASCADE xóa sạch chunk + index → phải dùng UPSERT `ON CONFLICT DO UPDATE`; (2) `original_text` không fallback sang `text` (text đã normalize + có overlap); (3) `avgdl` tính bằng **token** (`AVG(token_count) WHERE token_count > 0`), theo khuôn legal chứ không theo tabular (vốn tính bằng ký tự).
+
+#### 2.1.4 Thành phần chính của Phase 1
 
 | Thành phần | File | Vai trò |
 |---|---|---|
@@ -63,6 +85,10 @@ Pipeline Tabular xử lý dữ liệu dạng bảng từ Excel — biểu phí, 
 | `load_tabular_data.py` | `scripts/` | Đọc Excel + YAML mapping → ghi từng row vào `TABULAR_DATA` (kèm vector embedding). |
 | `migrate_add_tabular_tables.py` | `scripts/` | Migration script tạo 7 bảng Tabular (idempotent — `CREATE TABLE IF NOT EXISTS`). |
 | `verify_phase1.py` | `phase1_indexing/` | Verify dữ liệu trong cả 3 store sau ingest — đếm count, check chéo `chunk_id`. |
+| `convert_to_markdown.py` | `scripts/` | (General) Convert `.docx`/`.pdf` → `.md` để cấp bậc heading trở thành dữ liệu tường minh. |
+| `ingest_general_docs.py` | `scripts/` | (General) Đường chính nạp tài liệu general: backup → dry-run → nạp → rebuild BM25 → cổng H-1…H-16. |
+| `GeneralDocumentSplitter` | `phase1_indexing/lib/general_document_splitter.py` | (General) Cắt tài liệu theo section lá thành chunk (kèm `part_index`/`part_total`). |
+| `make_general_bm25_builder` | `shared/general_helpers.py` | (General) Dựng BM25 builder riêng cho luồng general (`general_bm25_statistics`/`_term_frequencies`). |
 
 ### 2.2 Legal Pipeline — Bảy bước Saga
 
@@ -244,7 +270,7 @@ Pipeline Tabular đơn giản hơn Legal về số bước nhưng **phức tạp
 | `tabular_ingestion_log` | Audit log nạp dữ liệu: `row_count`, `source_checksum`, `status`. |
 | `query_classification_log` | Log phân loại query để analytics: `classifier_rule`, `confidence`, `result_count`. |
 
-Tách riêng các bảng `tabular_*` vs Legal là quyết định có chủ đích — đảm bảo Nguyên tắc N5 (Phần 1 §3.2): zero cross-contamination giữa Legal và Tabular pipeline.
+Tách riêng các bảng `tabular_*`, `general_*` vs Legal là quyết định có chủ đích — đảm bảo Nguyên tắc N5 (Phần 1 §3.2): zero cross-contamination giữa ba pipeline (Legal, Tabular, General). Mỗi pipeline có bảng SQLite riêng và index BM25 riêng, không dùng chung bảng thống kê BM25.
 
 #### 2.3.2 EAV-lite schema — vì sao 10+10+5 slots?
 
@@ -897,6 +923,8 @@ Ba điểm tinh tế:
 2. **`enable_rerank=False`** trong path legal — rerank sẽ chạy lại trên merged pool.
 3. **Tabular errors bị swallow** (log warning, trả về `[]`) — legal vẫn hoạt động nếu tabular chưa init. Đảm bảo unified dispatch không bị fail vì tabular optional.
 
+> **Nhánh thứ ba — General (bổ sung sau):** Signature thực tế hiện tại có thêm tham số `include_general: bool = False`. Khi `False`, hàm chạy **thân cũ nguyên văn** như code trên (hai closure `_run_legal`/`_run_tabular`, `max_workers=2`, một lời gọi rerank) — đây là tính bất biến zero-regression. Khi `True` (bật bởi cờ `general_dispatch.enabled`), hàm thêm closure thứ ba `_run_general()` (`max_workers=3`), đưa kết quả general vào **cùng unified pool** rồi rerank chung một lượt. Nhờ vậy general **giành handler bằng rerank** (top-1 content_type sau rerank) chứ không qua `ContentTypeClassifier`. Chi tiết dispatch general + saga `blend_into_legal` xem Phần 6 §15.
+
 ### 3.5 Cấu hình Phase 2 — `retrieval_config.yaml`
 
 ```yaml
@@ -958,7 +986,9 @@ defaults:
 
 ## 4. Phase 3 — Generation
 
-> **Lưu ý:** Phase 3 còn có một **bản nâng cấp Agentic RAG** (vòng lặp ReAct, 4 tool, CitationGuard, Router) cho phép trả lời câu hỏi đa bước — bọc sau công tắc `agentic_rag` (mặc định tắt). Toàn bộ phần nâng cấp được tài liệu hóa riêng ở **Phần 6 — Nâng cấp Agentic RAG**. Mục 4 dưới đây mô tả pipeline Generation hiện tại, vẫn đúng nguyên vẹn khi `agentic_rag=false`.
+> **Lưu ý:** Phase 3 còn có một **bản nâng cấp Agentic RAG** (vòng lặp ReAct, 5 tool, ba trục Guard — CitationGuard/FeeGuard/TemporalGuard, Router) cho phép trả lời câu hỏi đa bước — bọc sau công tắc `agentic_rag` (mặc định tắt). Toàn bộ phần nâng cấp (giai đoạn A–J) được tài liệu hóa riêng ở **Phần 6 — Nâng cấp Agentic RAG**. Mục 4 dưới đây mô tả pipeline Generation hiện tại, vẫn đúng nguyên vẹn khi `agentic_rag=false`.
+>
+> Một số **module `shared/` mới** được thêm để phục vụ Agentic và các trục Guard, dùng chung giữa fast-path và agent-path: `fee_calculator.py` (phân loại/tính phí, `BOUND_SLOTS` sàn-trần — trục FeeGuard, xem Phần 6 §13), `legal_temporal_parser.py` (`doc_key()` resolve số hiệu văn bản — tool `check_validity`, Phần 6 §14), `general_helpers.py` / `system_scope.py` / `vn_currency.py` (luồng general + suy đơn vị tiền). Chi tiết thiết kế của các module này nằm ở Phần 6.
 
 ### 4.1 Tổng quan Phase 3
 

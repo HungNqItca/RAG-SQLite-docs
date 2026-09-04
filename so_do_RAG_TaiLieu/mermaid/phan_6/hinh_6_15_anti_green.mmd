@@ -1,0 +1,10 @@
+flowchart TB
+    GATE["Tuyên bố gate ĐẠT — phải chứng minh phép đo CHẠY THẬT"] --> Q1{"collected N items > 0? (test nằm trong testpaths)"}
+    Q1 -->|"không (G1)"| F1["XANH GIẢ: test ngoài testpaths → collected 0 items"]
+    Q1 -->|có| Q2{"kết quả rỗng phân biệt được 'lọc đúng' vs 'chưa index'?"}
+    Q2 -->|"không (G1.5)"| F2["XANH GIẢ: rỗng do chưa index BM25, không phải do lọc"]
+    Q2 -->|có| Q3{"corpus mà gate tham chiếu có thật sự tồn tại?"}
+    Q3 -->|"không (G2)"| F3["XANH GIẢ: gate trỏ nhóm eval không tồn tại"]
+    Q3 -->|có| Q4{"test parity liệt kê đủ call site bằng AST (không regex)?"}
+    Q4 -->|"chỉ 2/4 đường (G3)"| F4["XANH GIẢ: parity thiếu call site"]
+    Q4 -->|đủ| PASS["Gate ĐẠT THẬT"]
