@@ -7,7 +7,7 @@ Bộ tài liệu kỹ thuật chuẩn bị cho công tác đào tạo và chuy�
 | Phần | Nội dung | Số trang | Số sơ đồ | Trạng thái |
 |:----:|----------|---------:|---------:|:----------:|
 | **1** | Tổng quan hệ thống | 48 | 10 | ✅ Hoàn thành |
-| **2** | RAG Core (Phase 1/2/3) | 60 | 14 | ✅ Hoàn thành |
+| **2** | RAG Core (Phase 1/2/3) | 60 | 16 | ✅ Hoàn thành |
 | **3** | BFF Service | 36 | 8 | ✅ Hoàn thành |
 | **4** | agribank-chat (UI) + Phụ lục | 38 | 10 | ✅ Hoàn thành |
 | **5** | Hạ tầng & Vận hành (DevOps) | 25 | 6 | ✅ Hoàn thành |
@@ -38,7 +38,7 @@ Hai pipeline song song xử lý tài liệu pháp lý (Legal) và dữ liệu d�
 
 | § | Tiêu đề | Sơ đồ |
 |:-:|---------|:-----:|
-| 2.1 | Pipeline Legal · Pipeline Tabular | Hình 2.1a, 2.1b |
+| 2.1 | Legal: convert · ingest · Tabular · General | Hình 2.1a1, 2.1a2, 2.1b, 2.1c |
 | 2.2 | Saga Forward · Saga Rollback | Hình 2.2a, 2.2b |
 | 2.3 | EAV Structure · search_text + BM25 | Hình 2.3a, 2.3b |
 | 3.1 | Bốn chiến lược retrieval | Hình 3.1 |

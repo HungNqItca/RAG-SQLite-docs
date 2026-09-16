@@ -84,18 +84,19 @@
 | 9 | hinh_10_1_vong_doi_du_lieu | §10 Vòng đời dữ liệu |
 | 10 | hinh_11_1_production | §11 Triển khai production |
 
-### Phần 2 — 14 sơ đồ
+### Phần 2 — 16 sơ đồ
 | # | Sơ đồ | Mục |
 |:-:|---|---|
-| 1-2 | hinh_2_1a / hinh_2_1b | §2.1 Pipeline Legal · Pipeline Tabular |
-| 3-4 | hinh_2_2a / hinh_2_2b | §2.2.6 Saga Forward · Saga Rollback |
-| 5-6 | hinh_2_3a / hinh_2_3b | §2.3 EAV Structure · search_text+BM25 |
-| 7 | hinh_3_1_retrieval_strategies | §3.1 Bốn chiến lược |
-| 8-9 | hinh_3_2a / hinh_3_2b | §3.2 Hybrid+RRF · Rerank+Post |
-| 10 | hinh_3_3_tabular_retrieval | §3.3 Tabular retrieval |
-| 11 | hinh_4_1_orchestrator_dispatch | §4.2 GenerationOrchestrator |
-| 12-13 | hinh_4_2a / hinh_4_2b | §4.3 Tiền xử lý · Decision tree |
-| 14 | hinh_4_3_tabular_handler | §4.4 TabularGenerationHandler |
+| 1-2 | hinh_2_1a1 / hinh_2_1a2 | §2.1 Legal: convert Docling · ingest |
+| 3-4 | hinh_2_1b / hinh_2_1c | §2.1 Pipeline Tabular · Pipeline General |
+| 5-6 | hinh_2_2a / hinh_2_2b | §2.2.6 Saga Forward · Saga Rollback |
+| 7-8 | hinh_2_3a / hinh_2_3b | §2.3 EAV Structure · search_text+BM25 |
+| 9 | hinh_3_1_retrieval_strategies | §3.1 Bốn chiến lược |
+| 10-11 | hinh_3_2a / hinh_3_2b | §3.2 Hybrid+RRF · Rerank+Post |
+| 12 | hinh_3_3_tabular_retrieval | §3.3 Tabular retrieval |
+| 13 | hinh_4_1_orchestrator_dispatch | §4.2 GenerationOrchestrator |
+| 14-15 | hinh_4_2a / hinh_4_2b | §4.3 Tiền xử lý · Decision tree |
+| 16 | hinh_4_3_tabular_handler | §4.4 TabularGenerationHandler |
 
 ### Phần 3 — 8 sơ đồ
 | # | Sơ đồ | Mục |

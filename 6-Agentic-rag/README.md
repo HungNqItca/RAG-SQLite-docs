@@ -7,7 +7,7 @@ Tài liệu hóa bản nâng cấp **Agentic RAG** của phân hệ `rag-core` (
 | Hạng mục | Giá trị |
 |---|---|
 | Số trang | ~30 |
-| Số sơ đồ | 7 (8 file, do 6.3 chia a/b) |
+| Số sơ đồ | 16 (giai đoạn A–J; 6.3 chia a/b) |
 | Nguồn code | `rag-core/phase3_generation/core/agent/` (6 giai đoạn A–F, 125 test pass) |
 | Trạng thái | ✅ Hoàn thành |
 
@@ -33,7 +33,7 @@ Tài liệu hóa bản nâng cấp **Agentic RAG** của phân hệ `rag-core` (
 
 > Nguyên tắc bao trùm: *LLM được tự do về điều hướng, nhưng bị kỷ luật về trích dẫn.*
 
-## Sơ đồ — 7 hình (tất cả TB / sequence)
+## Sơ đồ — 16 hình (tất cả TB / sequence)
 
 | # | Sơ đồ | Mục |
 |:-:|---|---|
@@ -44,8 +44,16 @@ Tài liệu hóa bản nâng cấp **Agentic RAG** của phân hệ `rag-core` (
 | 6 | hinh_6_5_router_orchestrator | §6 Router + Hybrid repair/annotate |
 | 7 | hinh_6_6_stream_verify | §7 Verify-trước-stream (sequence) |
 | 8 | hinh_6_7_eval_rollout | §8 Eval 4 nhóm + bật dần |
+| 9 | hinh_6_8_three_guards | §10 Ba trục Guard + bảng cờ production |
+| 10 | hinh_6_9_toolcontext | §11 ToolContext đi song song với args |
+| 11 | hinh_6_10_fee_guard | §13 FeeGuard hai trục GIÁ TRỊ / VAI TRÒ |
+| 12 | hinh_6_11_check_validity | §14 check_validity: resolve rồi wrap, ba ca khuyết |
+| 13 | hinh_6_12_temporal_guard | §14 TemporalGuard hai nguồn document_id |
+| 14 | hinh_6_13_general_blend | §15 General dispatch + saga blend |
+| 15 | hinh_6_14_observability | §16 Observability: hai điểm cắm, metric stream-only |
+| 16 | hinh_6_15_anti_green | §16 Bốn cửa kiểm chống "xanh giả" |
 
-Hai sơ đồ chuỗi tuyến tính (6.3a, 6.4) cao hơn 25cm và được `build_docx.py` auto-scale fit A4 (đúng cơ chế §3.6 của Docs-Design-Requirement) — đã verify chữ vẫn đọc rõ.
+Ba sơ đồ chuỗi tuyến tính (6.3a, 6.4, 6.15) cao hơn 25cm và được `build_docx.py` auto-scale fit A4 (đúng cơ chế §3.6 của Docs-Design-Requirement) — đã verify chữ vẫn đọc rõ.
 
 ## Rebuild
 
