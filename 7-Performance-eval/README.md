@@ -55,7 +55,7 @@ Hình 7.2 (10 mốc thời gian) được chia a/b tại ranh giới prompt-buil
 
 ```bash
 cd <workspace>
-for f in 7-Performance-eval/mermaid/*.mmd; do
+for f in so_do_RAG_TaiLieu/mermaid/phan_7/*.mmd; do
   name=$(basename "$f" .mmd)
   mmdc -i "$f" -o "7-Performance-eval/png/${name}.png" \
        -c so_do_RAG_TaiLieu/mermaid_config.json \

@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     T_YAML["📋 YAML config (type + field_mapping)"]
     T_REG["register_tabular_type.py → TABULAR_TYPE_REGISTRY + TABULAR_FIELD_META (immutable)"]
@@ -19,3 +20,4 @@ flowchart TB
     class T_REG,T_LOAD,T_BUILD,T_BM25 tab
     class T_YAML,T_XLS io
     class T_SIG sig
+```

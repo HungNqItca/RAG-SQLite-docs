@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     REQ["Request /admin/users (POST/PUT/DELETE)"]
     DEP["<b>FastAPI Depends(require_admin)</b> · rank ≥ 3"]
@@ -33,3 +34,4 @@ flowchart TB
     class BLOCK,SELF_BLOCK block
     class OK ok
     class NOTE note
+```

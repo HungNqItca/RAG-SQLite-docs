@@ -127,7 +127,7 @@ RAG_TaiLieu_ThietKe/
 │   ├── phan_3_bff_service.md
 │   ├── phan_4_agribank_chat.md
 │   └── build_docx.py                   ← script với auto-scale image
-├── mermaid/                            ← 42 file .mmd source
+├── mermaid/                            ← 10 file .md (mermaid có fence, xem trực tiếp)
 └── png/                                ← 42 PNG render
 ```
 

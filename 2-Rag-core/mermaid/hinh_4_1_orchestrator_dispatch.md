@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     Q["ChatRequest (question · session_id?)"]
     SES["_ensure_session()"]
@@ -48,3 +49,4 @@ flowchart TB
     class PROMPT llm
     class FB fallback
     class UD,URDISP,LEGACY decision
+```

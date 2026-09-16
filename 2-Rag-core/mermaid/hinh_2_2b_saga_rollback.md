@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     EX[("⚠ Exception (Hình 2.2a)")]
     RB["_rollback_partial_ingestion()"]
@@ -13,3 +14,4 @@ flowchart TB
     class EX exception
     class RB,R1 rollback
     class RAISE terminal
+```

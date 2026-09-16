@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     Q["RetrievalQuery<br/>(query_text, top_k, strategy,<br/>enable_rerank, filters)"]
 
@@ -84,3 +85,4 @@ flowchart TB
     class POST,RES post
     class OUT out
     class CACHE,STRAT,RR decision
+```

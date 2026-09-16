@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     START["ingest_document(file)"]
     WS["write_state = {<br/>mongo: F, sqlite_doc: F,<br/>sqlite_chunks: F, chroma: F}"]
@@ -23,3 +24,4 @@ flowchart TB
     class M,SD,SC,CH step
     class EX exception
     class START,WS,OK terminal
+```

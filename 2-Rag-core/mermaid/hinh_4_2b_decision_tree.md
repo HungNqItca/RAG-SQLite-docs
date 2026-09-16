@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     A_OUT["QuerySlots từ Tầng A (Hình 4.2a)"]
 
@@ -45,3 +46,4 @@ flowchart TB
     class D tier_d
     class A_OUT,SR terminal
     class B_CHK,B2_CHK,B5_CHK,C_CHK,B5C_CHK decision
+```

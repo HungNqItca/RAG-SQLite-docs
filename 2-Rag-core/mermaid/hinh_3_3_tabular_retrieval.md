@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     Q["query · top_k=10 · type_tab_hint='PHI'"]
     INIT["<b>_init_tabular_retrievers()</b> (lazy, double-checked lock)"]
@@ -24,3 +25,4 @@ flowchart TB
     class RRF_T merge
     class META meta
     class OUT out
+```

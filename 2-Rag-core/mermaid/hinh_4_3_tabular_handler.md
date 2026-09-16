@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     Q["question (content_type='tabular')"]
     PREP["session.get_history() + _condense_if_needed_async() + <b>P3 QueryAnalyzer</b>"]
@@ -34,3 +35,4 @@ flowchart TB
     class P1 p1
     class LLM llm
     class P5_GATE,P5_AGG decision
+```

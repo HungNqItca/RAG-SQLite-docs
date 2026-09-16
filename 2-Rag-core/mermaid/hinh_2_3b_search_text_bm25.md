@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     DT_IN["TABULAR_DATA row (Hình 2.3a)"]
     ST_RAW["RAW field values: '0.05%' · '10000' · '500000'"]
@@ -21,3 +22,4 @@ flowchart TB
     class DT_IN in
     class ST_RAW,ST_PCT,ST_VND,ST_OUT txt
     class BM_TF,BM_NORM bm25
+```

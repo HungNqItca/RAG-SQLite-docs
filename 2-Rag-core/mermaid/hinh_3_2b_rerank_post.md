@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     IN["top-20 từ RRF (Hình 3.2a)"]
     RERANK["<b>CrossEncoderReranker</b> · mmarco-mMiniLMv2-L12-H384-v1<br/>predict([query, text] × 20) → sigmoid → output_k=10"]
@@ -18,3 +19,4 @@ flowchart TB
     class POST post
     class AE ae
     class OUT out
+```

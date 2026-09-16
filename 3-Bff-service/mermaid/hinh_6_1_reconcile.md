@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     START["BFF startup (lifespan)"]
     LOAD["session_store.load_from_db() · SELECT * FROM user_sessions → memory"]
@@ -29,3 +30,4 @@ flowchart TB
     class SKIP skip
     class CLEAN clean
     class STATS stats
+```

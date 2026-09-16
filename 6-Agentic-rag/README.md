@@ -60,7 +60,7 @@ Ba sơ đồ chuỗi tuyến tính (6.3a, 6.4, 6.15) cao hơn 25cm và được 
 ```bash
 # 1. Render sơ đồ (cần Chrome cho puppeteer)
 cd <workspace>
-for f in 6-Agentic-rag/mermaid/*.mmd; do
+for f in so_do_RAG_TaiLieu/mermaid/phan_6/*.mmd; do
   name=$(basename "$f" .mmd)
   mmdc -i "$f" -o "6-Agentic-rag/png/${name}.png" \
        -c so_do_RAG_TaiLieu/mermaid_config.json \

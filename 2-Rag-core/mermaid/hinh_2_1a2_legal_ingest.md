@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     L_MD["Bản .md đã có bảng<br/>(nối từ Hình 2.1a1)"]
     L_PARSE["_load_md → parse Điều &gt; Khoản &gt; Phụ lục<br/>+ parse_legal_temporal (H1 Pha A: hiệu lực VB)"]
@@ -11,3 +12,4 @@ flowchart TB
     class L_PARSE,L_BM25,L_BACK legal
     class L_MD io
     class L_WRITE write
+```

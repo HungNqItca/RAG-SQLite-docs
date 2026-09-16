@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     USERS["<b>users</b><br/>id (UUID PK) · username UNIQUE · password_hash bcrypt<br/>role CHECK(user/manager/admin/superadmin) · is_active<br/>failed_login_attempts · locked_until · last_login"]
 
@@ -25,3 +26,4 @@ flowchart TB
     class US us
     class CONV conv
     class CAL cal
+```

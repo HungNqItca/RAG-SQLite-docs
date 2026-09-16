@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     REQ["POST /api/v1/chat/stream (question, session_id?, fetch_history?)"]
 
@@ -39,3 +40,4 @@ flowchart TB
     class META,TOKEN,DONE event
     class YIELD yield
     class EV decision
+```

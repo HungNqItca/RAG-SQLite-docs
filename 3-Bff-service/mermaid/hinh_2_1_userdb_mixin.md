@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     UDB["<b>UserDB</b> · thin shell · singleton get_user_db()<br/>kế thừa từ 7 mixin class"]
 
@@ -22,3 +23,4 @@ flowchart TB
 
     class UDB shell
     class M1,M2,M3,M4,M5,M6,M7 mixin
+```

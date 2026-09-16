@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     LOGIN["POST /auth/login (username, password)"]
     AUTH["<b>Authenticate</b> · brute-force check · bcrypt verify · is_active"]
@@ -29,3 +30,4 @@ flowchart TB
     class GEN gen
     class SAVE_RT store
     class CLIENT client
+```

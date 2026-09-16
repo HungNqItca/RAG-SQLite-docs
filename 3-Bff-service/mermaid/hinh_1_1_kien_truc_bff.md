@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     FE["🌐 React Frontend (:5173)"]
 
@@ -20,3 +21,4 @@ flowchart TB
     class FE fe
     class MW,ROUTERS,CORE bff
     class RC rc
+```

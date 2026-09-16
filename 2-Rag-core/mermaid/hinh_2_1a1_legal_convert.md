@@ -1,4 +1,6 @@
+```mermaid
 flowchart TB
+
     L_IN["File .docx (·.md/.txt/.pdf là đường lùi, chấp nhận mất bảng)"]
     L_RES{"resolve_ingest_source: đã có md/&lt;tên&gt;.md chưa?"}
     L_CONV["convert_legal_to_markdown.py — IBM Docling + _nang_cap_dieu (nâng Điều/Phụ lục thành ##)"]
@@ -14,3 +16,4 @@ flowchart TB
     class L_RES legal
     class L_IN,L_MD,L_NEXT io
     class L_CONV write
+```

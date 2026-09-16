@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     REQ["POST /auth/login (username, password)"]
 
@@ -36,3 +37,4 @@ flowchart TB
     class LOCK,VERIFY,ACTIVE decision
     class L423,L401,L403 block
     class OK ok
+```

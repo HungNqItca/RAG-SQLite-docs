@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     Q["query: 'điều kiện vay vốn tín dụng'<br/>top_k = 5, enable_rerank = true"]
     HYBRID["HybridRetriever<br/>retrieval_k = min(int(5×1.5), 30) = 30"]
@@ -25,3 +26,4 @@ flowchart TB
     class VR,BR sub
     class HYBRID,RRF merge
     class OUT out
+```

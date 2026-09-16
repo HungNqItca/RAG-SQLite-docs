@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     START["question + session_id"]
     PRE_1A["<b>Tiền xử lý 1A</b> · Implicit Continuation"]
@@ -17,3 +18,4 @@ flowchart TB
     class A tier_a
     class START terminal
     class NEXT link
+```

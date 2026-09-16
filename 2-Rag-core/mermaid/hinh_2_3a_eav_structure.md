@@ -1,3 +1,4 @@
+```mermaid
 flowchart TB
     YT["YAML type definition<br/>type_tab: PHI<br/>fields: FT1=MUC_PHI · FN1=SOTIEN_MIN · FN2=SOTIEN_MAX"]
     META_T["TABULAR_FIELD_META · immutable mapping<br/>(TYPE_TAB, FIELD_SLOT) → FIELD_NAME<br/>(PHI, FT1) → MUC_PHI<br/>(PHI, FN1) → SOTIEN_MIN"]
@@ -18,3 +19,4 @@ flowchart TB
     class META_T meta
     class DATA_T data
     class NEXT link
+```
