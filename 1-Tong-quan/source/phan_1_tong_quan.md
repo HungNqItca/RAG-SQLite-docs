@@ -509,7 +509,7 @@ Ngoài ra có 3 file mới được tách riêng để tránh circular import v�
 | Thư mục | Vai trò | File then chốt |
 |---|---|---|
 | `rag-core/shared/` | Config, schemas, DB managers, classifiers - dùng chung 3 phase | `config.py` · `schemas.py` · `db_managers/` · `bm25_builder.py` · `classifiers/query_classifier.py` |
-| `rag-core/phase1_indexing/` | Pipeline ingest offline - parse `.docx`, chunk, embed, BM25 | `ingestion.py` · `lib/legal_document_splitter.py` · `verify_phase1.py` |
+| `rag-core/phase1_indexing/` | Pipeline ingest offline - convert `.docx`→`.md` (giữ bảng, Docling), chunk, embed, BM25 | `ingestion.py` · `lib/legal_document_splitter.py` · `verify_phase1.py` |
 | `rag-core/phase2_retrieval/` | Retrieval runtime - BM25 + Vector + Hybrid RRF + Rerank | `src/orchestrator.py` · `src/retrievers/*.py` |
 | `rag-core/phase3_generation/` | Generation runtime - Query Pipeline 4 tầng, LLM, SSE | `core/generation_orchestrator.py` · `core/handlers/*.py` · `api/main.py` |
 | `rag-core/scripts/` | Ops scripts - setup, migrate, rebuild BM25, Stage 0 snapshot | `setup_database.py` · `migrate_add_tabular_tables.py` · `load_tabular_data.py` |

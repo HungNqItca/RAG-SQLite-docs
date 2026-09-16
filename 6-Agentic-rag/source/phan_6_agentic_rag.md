@@ -620,7 +620,7 @@ Một nguồn nhầm lẫn lớn khi đọc code: nhiều cờ có **mặc đị
 | `general_dispatch.enabled` | `false` | **`true`** | Luồng general vào pool unified + gác đăng ký tool `search_general` |
 | `general_dispatch.blend_into_legal` | `false` | `false` | **Đã lật hai lần** — bật 2026-09-01, lùi 2026-09-02 (§15) |
 | `general.citation_hygiene` | — | `shadow` | Chỉ đếm + ghi log, không sửa answer |
-| `query_rewriting.enabled` | `false` | `false` | Tắt: `llama-cpp-python` không thread-safe |
+| `query_rewriting` · `hyde` | — | **ĐÃ GỠ (2026-09-12)** | Code chết: chỉ đường legacy gọi tới, unified/agentic không dùng. Xoá cả 2 khoá + `QueryRewriter`/`HyDERewriter` (Phần 2 §5.8) |
 | `contextual_condensation.enabled` | `true` | `true` | Tầng C hoạt động |
 
 > **Ba cờ chốt lúc khởi động:** `agentic_rag`, `temporal_guard`, `observability` được đọc **một lần khi khởi động RAG-Core**. Đổi file mà không restart thì tiến trình vẫn giữ giá trị cũ ("đĩa ≠ process"). Biến môi trường `AGENTIC_RAG` có độ ưu tiên cao hơn file.

@@ -36,21 +36,35 @@ Phase 1 chịu trách nhiệm **nhập liệu (ingestion)** tài liệu vào h�
 
 Phase 1 gồm **ba pipeline song song và độc lập** — phục vụ ba loại dữ liệu rất khác nhau về cấu trúc. Ba pipeline **tách hẳn nhau ở mọi tầng**: bảng SQLite riêng, index BM25 riêng, và (với legal/general) collection ChromaDB riêng — không JOIN chéo, không dùng chung bảng thống kê BM25.
 
-| Pipeline | Nguồn | Đích lưu | Đã nạp (đo 2026-09-03) |
+| Pipeline | Nguồn | Đích lưu | Đã nạp |
 |---|---|---|---|
-| **1a legal** | `.docx` / `.txt` / `.pdf` | MongoDB + ChromaDB `legal_clauses` + SQLite `chunks` | 5 VB · 460 chunk |
-| **1b tabular** | `.xlsx` biểu phí/lãi suất | SQLite `TABULAR_*` (**không** MongoDB, **không** Chroma) | 980 dòng · 4 TYPE_TAB |
-| **1c general** | `.md` (convert từ `.docx`/`.pdf`) | SQLite `general_*` + ChromaDB `general_chunks` | 4 tài liệu · 396 chunk |
+| **1a legal** | `.md` (convert từ `.docx` bằng Docling) · `.docx`/`.txt`/`.pdf` là **đường lùi** | MongoDB + ChromaDB `legal_clauses` + SQLite `chunks` | 9 VB · 1.073 chunk (đo 2026-09-05) |
+| **1b tabular** | `.xlsx` biểu phí/lãi suất | SQLite `TABULAR_*` (**không** MongoDB, **không** Chroma) | 980 dòng · 4 TYPE_TAB (đo 2026-09-03) |
+| **1c general** | `.md` (convert từ `.docx`/`.pdf`) | SQLite `general_*` + ChromaDB `general_chunks` | 4 tài liệu · 396 chunk (đo 2026-09-03) |
+
+> **Từ 2026-09-05, CẢ legal LẪN general đều ingest từ `.md`** — bằng **ba converter khác nhau, không dùng nhầm cho nhau**: `convert_legal_to_markdown.py` (legal, IBM Docling), `convert_to_markdown.py` (general, profile parser + `md_level_base`), và `convert_faq_to_markdown.py` (general, cho bộ câu hỏi Q&A dạng bảng — thêm 2026-09-11, §2.1.3). Chi tiết ở §2.1.1 và §2.1.3.
 
 > **Lưu ý về pipeline general (1c):** đây là luồng được bổ sung sau (giai đoạn GENERAL) để xử lý **tài liệu nội bộ không có cấu trúc Điều–Khoản** (sổ tay, hướng dẫn, công văn, báo cáo). Điểm khác biệt quan trọng ở tầng truy hồi: **luồng general KHÔNG đi qua `ContentTypeClassifier`** — nó vào cùng pool ở `retrieve_unified_sync()` và **giành handler bằng rerank**, được gác bởi cờ `general_dispatch.enabled` (xem Phần 6 §15 và §3 dưới đây).
 
 #### 2.1.1 Pipeline Legal — Văn bản pháp lý có cấu trúc phân cấp
 
-Pipeline Legal xử lý văn bản pháp lý có cấu trúc phân cấp `Văn bản → Điều → Khoản → Điểm`. Mỗi tệp đầu vào có thể là `.docx`, `.pdf`, hoặc `.txt`, được parse bằng regex để tách cấu trúc cấp độ ba này. Mỗi Khoản cuối cùng được lưu vào **3 store khác nhau**: MongoDB (cấu trúc phân cấp), ChromaDB (vector embedding), và SQLite (chunks + BM25 statistics).
+Pipeline Legal xử lý văn bản pháp lý có cấu trúc phân cấp `Văn bản → Điều → Khoản → Điểm`, lưu mỗi Khoản vào **3 store**: MongoDB (cấu trúc phân cấp), ChromaDB (vector embedding), SQLite (chunks + BM25 statistics).
 
-![Hình 2.1a — Pipeline Legal: 7 bước từ file đầu vào tới 3 store + BM25](../png/hinh_2_1a_legal_pipeline.png)
+**Từ 2026-09-05, luồng legal ingest từ `.md`, không còn parse thẳng `.docx`.** Bước đầu tiên `resolve_ingest_source` kiểm tra: nếu chưa có `data/uploads/legal-docs/md/<tên>.md` thì gọi `convert_legal_to_markdown.py` (IBM Docling) sinh ra; nếu đã có thì **dùng luôn, không convert đè**. Từ đó mọi bước chạy trên `.md`. `.docx`/`.txt`/`.pdf` vẫn nhận được (đường lùi để không phá quy trình cũ) nhưng đi đường đó là **chấp nhận mất bảng** (lý do bên dưới).
 
-*Hình 2.1a — Pipeline Legal: file `.docx`/`.pdf`/`.txt` đi qua 7 bước (Bước 0 đến Bước 6), kết thúc ở 3 store (MongoDB, SQLite, ChromaDB) cộng với BM25 index. Checksum guard ở Bước 0.5 cho phép skip toàn bộ pipeline khi file không thay đổi.*
+![Hình 2.1a1 — Legal (chặng Markdown): resolve_ingest_source → Docling → .md giữ bảng](../png/hinh_2_1a1_legal_convert.png)
+
+*Hình 2.1a1 — Chặng Markdown của pipeline Legal: `resolve_ingest_source` quyết định convert (nếu chưa có `.md`) hay dùng lại bản `.md` sẵn có. `convert_legal_to_markdown.py` dùng IBM Docling + `_nang_cap_dieu()` để nâng dòng Điều/Phụ lục thành heading `##`; bản `.md` giữ được bảng dạng pipe-markdown và mang `source_checksum` của tệp gốc trong front-matter. → tiếp Hình 2.1a2.*
+
+![Hình 2.1a2 — Legal (chặng ingest): parse → 3 store → BM25 → backfill temporal](../png/hinh_2_1a2_legal_ingest.png)
+
+*Hình 2.1a2 — Chặng ingest: `LegalDocumentSplitter._load_md` cắt front-matter rồi parse cây Điều > Khoản > Phụ lục; `parse_legal_temporal` (H1 Pha A) đọc mốc hiệu lực của chính văn bản; Saga ghi 3 store; BM25Builder dựng index; cuối cùng `backfill_legal_temporal.py` (H1 Pha B) quét quan hệ liên-văn-bản — bước BẮT BUỘC chạy sau mỗi ingest.*
+
+> **Vì sao phải qua Markdown — `_load_docx` LÀM MẤT MỌI Ô BẢNG (bug đã đo).** *Triệu chứng:* ingest báo thành công, số Điều/Khoản đúng, nhưng nội dung mọi bảng và phụ lục **chưa từng vào index** — hỏng không có triệu chứng. *Nguyên nhân:* `LegalDocumentSplitter._load_docx` chỉ đọc `doc.paragraphs`, mà `python-docx` không đưa `<w:p>` nằm trong `<w:tbl>` vào danh sách đó; bảng chỉ được đọc một lần để tìm `"Số:"` cho tiêu đề rồi vứt. Đo trên 10 văn bản (2026-09-05): **337 bảng, gồm toàn bộ 21 Phụ lục, không có trong index**. *Cách fix:* chèn chặng convert sang `.md` bằng Docling — phụ lục giữ dạng pipe-markdown, chảy vào `original_content` → `text_full` của thẻ nguồn → `agribank-chat` render được bảng, **không cần đụng Phase 2/3**.
+
+> **`_nang_cap_dieu()` — một luật, hai đường.** Docling **không** sinh heading `#` cho văn bản pháp luật VN (đo: 0 dòng heading trên TT15/TT64/TT30) vì các văn bản này không dùng Word Heading style — Điều ra dạng `**Điều 1. …**` (bold). `_nang_cap_dieu()` nâng dòng Điều lên `##`, dùng **chính** các pattern (`article_pattern`, `ANNEX_TITLE_PATTERN`…) của `LegalDocumentSplitter`. Nếu dùng hai luật khác nhau cho lúc SINH `.md` và lúc PARSE thì hai bên dựng ra hai cây khác nhau mà không cổng nào phát hiện (cả hai đều "chạy thành công").
+
+> **H1 — hai pha temporal không thể gộp.** Ingest chỉ đọc được toàn văn của *chính* văn bản đang nạp, nên biết "tôi hiệu lực từ ngày nào, tôi sửa văn bản nào" (Pha A) — nhưng **không** biết mình đã bị một văn bản khác thay thế. Quan hệ thay thế là *liên-văn-bản*, chỉ Pha B (`backfill_legal_temporal.py`, quét chéo toàn index) phát hiện được. Bỏ Pha B → văn bản đã chết vẫn mang `legal_status='active'` → TemporalGuard (Phần 6 §14) im lặng. Lưu ý: `documents.status` (trạng thái xử lý/ingest) và `documents.legal_status` (hiệu lực pháp lý) là **hai trục độc lập**, cùng có giá trị `'active'` nên rất dễ nhầm — không suy cái này từ cái kia.
 
 #### 2.1.2 Pipeline Tabular — Dữ liệu dạng bảng
 
@@ -74,12 +88,26 @@ Pipeline General xử lý sổ tay, hướng dẫn, công văn, báo cáo — th
 - **`doc_family` tự nhận KHÔNG đáng tin — phải khai tường minh.** Đo lúc nạp: sai 2/4 (tiêu ngữ hành chính `Số:`, `V/v` của văn bản Việt Nam thường nằm trong bảng, mà bộ nhận diện chỉ quét block đoạn văn). Đã vá lên 3/4; ca còn lại (báo cáo gửi bằng đường công văn) phải khai qua `--doc-family`/`--csv`.
 - **Ba điều KHÔNG được chép từ khuôn legal sang general:** (1) `INSERT OR REPLACE` vào `general_documents` gây FK CASCADE xóa sạch chunk + index → phải dùng UPSERT `ON CONFLICT DO UPDATE`; (2) `original_text` không fallback sang `text` (text đã normalize + có overlap); (3) `avgdl` tính bằng **token** (`AVG(token_count) WHERE token_count > 0`), theo khuôn legal chứ không theo tabular (vốn tính bằng ký tự).
 
-#### 2.1.4 Thành phần chính của Phase 1
+**Converter thứ ba cho bộ câu hỏi Q&A dạng bảng (`convert_faq_to_markdown.py`, thêm 2026-09-11).** Bộ câu hỏi/tình huống (5 nhóm A–E, 295 hàng, cột *Câu hỏi · Trả lời · Căn cứ*) không dùng được `convert_to_markdown.py` thông thường. *Nguyên nhân:* luồng general **không có khái niệm HÀNG bảng** — `convert_to_markdown.py` dựng cả bảng docx thành **một** khối markdown-pipe, mà `GeneralDocumentSplitter` coi một block `tbl` markdown có `table_shape == (0,0)` nên không bao giờ thành heading ⇒ 105 câu nhóm A chung một `heading_path_str` (chính là `heading_text` người dùng thấy trên thẻ nguồn). *Cách fix:* converter riêng cho mỗi **hàng** bảng thành một heading. Ba kỷ luật đã đo của converter này: (1) các dòng cùng một ô **không** chèn dòng trống ở giữa (vì `_detect` chấm theo block, mà Markdown tách block theo dòng trống → tách sai sinh 87 heading giả, gộp ô lại còn 3); (2) tiền tố `**Căn cứ:**` là **cầu chì** — không phải trình bày — vì ba dòng dạng `Chương II/V Quy định số…` ở cột *Căn cứ* khớp pattern `struct`, không bị `short` chặn, sẽ thành heading cấp 1 cắt đôi cây nếu bỏ tiền tố; (3) **không đè** bản `.md` đã có (exit 3), vì `rag-core/data/` nằm trong `.gitignore` — sửa tay ở đó không có đường lùi.
+
+#### 2.1.4 Provenance & phát hiện lệch bản (drift) của luồng convert→ingest
+
+Cả legal lẫn general đều theo mô hình **convert một lần sang `.md`, khi đã có `.md` thì không convert lại** (`resolve_ingest_source` cho legal; exit 3 khi `.md` đã có cho general). Mô hình này cần cơ chế **truy vết xuất xứ** để không mất liên kết với tệp gốc và không nạp trùng.
+
+**Cơ chế provenance (đã có trong code):** cả ba converter ghi **front-matter tự mô tả** vào đầu `.md` — `source_file_name`, `source_checksum` (**sha256 của tệp GỐC**, không phải của `.md`), `converted_at`, `converter` (tên + version). Nhờ đó `.md` mang theo định danh bản gốc: copy sang máy khác vẫn truy được nó sinh từ tệp nào, lúc nào, bằng converter version mấy. Dedup ở tầng ingest đi theo `source_checksum` — cùng một tệp gốc không tạo hai tài liệu song song trong index (điều sẽ làm BM25 tính IDF trên corpus có bản sao).
+
+**Khoảng trống đã nhận diện — chưa có drift-detection tự động.** Chuỗi provenance bảo vệ được tình huống *"đã convert lại thì ingest đúng"*, nhưng **không** có bước nào tự so `sha256(.docx hiện tại)` với `source_checksum` đã lưu để cảnh báo *"tệp gốc đã đổi mà `.md` chưa được convert lại"*. Kịch bản rủi ro với chatbot pháp lý: ai đó cập nhật `.docx` gốc nhưng quên convert lại → `resolve_ingest_source` thấy `.md` cũ đã tồn tại → **dùng luôn bản cũ** → hệ thống âm thầm phục vụ nội dung lỗi thời. Trigger convert-lại hiện phụ thuộc con người nhớ (`--force`), không có hệ thống nhắc.
+
+> **Khuyến nghị (chưa triển khai):** bổ sung script drift-check tiền-ingest — duyệt thư mục tệp gốc, tính `sha256`, so với `source_checksum` trong DB / front-matter `.md`; tệp nào lệch (hoặc tệp gốc mới chưa từng ingest) thì in cảnh báo "cần convert lại + `--force`". Biến trigger từ "con người nhớ" thành "hệ thống nhắc". Với corpus hiện tại (9 VB legal + 4 tài liệu general) script chạy vài giây. Trên Windows dùng Python (`hashlib`, `sqlite3`) hoặc PowerShell (`Get-FileHash`), tránh CLI Unix.
+
+#### 2.1.5 Thành phần chính của Phase 1
 
 | Thành phần | File | Vai trò |
 |---|---|---|
 | `DocumentIngestionPipeline` | `phase1_indexing/ingestion.py` | Class điều phối toàn bộ Legal pipeline 7 bước. Khởi tạo một lần, tái sử dụng cho nhiều file. |
-| `LegalDocumentSplitter` | `phase1_indexing/lib/legal_document_splitter.py` | Parser văn bản pháp lý theo cấu trúc Điều > Khoản. Hỗ trợ `.docx`, `.pdf`, `.txt`. |
+| `LegalDocumentSplitter` | `phase1_indexing/lib/legal_document_splitter.py` | Parser văn bản pháp lý theo cấu trúc Điều > Khoản > Phụ lục. Từ 2026-09-05 dùng `_load_md` (đọc `.md` đã convert); `_load_docx` giữ làm đường lùi (mất bảng). |
+| `convert_legal_to_markdown.py` | `scripts/` | (Legal) Convert `.docx` → `.md` bằng **IBM Docling** + `_nang_cap_dieu()`, giữ được bảng/phụ lục. Ghi front-matter `source_checksum` tệp gốc. |
+| `convert_faq_to_markdown.py` | `scripts/` | (General) Convert bộ câu hỏi Q&A dạng bảng → `.md`, mỗi hàng thành một heading (§2.1.3). Thêm 2026-09-11. |
 | `BM25Builder` | `shared/bm25_builder.py` | Builder BM25 index. **Tham số hoá theo `(stats_table, freq_table)`** để dùng được cho cả Legal và Tabular. |
 | `register_tabular_type.py` | `scripts/` | Đọc YAML config → ghi `TABULAR_TYPE_REGISTRY` + `TABULAR_FIELD_META`. |
 | `load_tabular_data.py` | `scripts/` | Đọc Excel + YAML mapping → ghi từng row vào `TABULAR_DATA` (kèm vector embedding). |
@@ -998,7 +1026,7 @@ Phase 3 là **tầng sinh câu trả lời** của hệ thống RAG. Đây là p
 - Slot detection cho câu hỏi pháp lý (Điều/Khoản/văn bản đã nêu hay chưa).
 - Clarification và Disambiguation khi câu hỏi mơ hồ.
 - Contextual condensation cho câu hỏi tiếp nối.
-- Multi-query rewriting để mở rộng coverage retrieval.
+- ~~Multi-query rewriting~~ (đã gỡ 2026-09-12 — xem §5.8).
 - LLM streaming với fallback model khi API fail.
 - Post-stream side effects (lưu history, sinh follow-up suggestions).
 
@@ -1022,7 +1050,7 @@ phase3_generation/
 ├── core/
 │   ├── shared_imports.py             # sys.path setup, re-export shared schemas
 │   ├── generation_orchestrator.py    # Pipeline chính + ContentTypeClassifier dispatch
-│   ├── query_rewriter.py             # Multi-query, HyDE
+│   ├── query_rewriter.py             # ĐÃ GỠ 2026-09-12 (Multi-query, HyDE — code chết)
 │   ├── prompt_builder.py             # Legal prompt builder
 │   ├── prompt_builder_tabular.py     # TabularPromptBuilder
 │   ├── prompt_templates.py           # SYSTEM_PROMPT constants + build_tabular_user_prompt()
@@ -1068,7 +1096,7 @@ phase3_generation/
 7. `ContextualCondenser(llm, config)` — Tầng C (shared giữa hai handler).
 8. `FollowupGenerator(llm, config)` — sinh gợi ý câu hỏi (shared).
 9. `ContentTypeClassifier()` — từ `shared/classifiers/`.
-10. `QueryRewriter`, `HyDERewriter` — legal only, dùng chung LLM instance.
+10. ~~`QueryRewriter`, `HyDERewriter`~~ — ĐÃ GỠ 2026-09-12 (chỉ đường legacy gọi tới; xem §5.8).
 11. `LegalGenerationHandler(...)`.
 12. `TabularGenerationHandler(...)`.
 13. Read `unified_dispatch` config:
@@ -1293,18 +1321,20 @@ class SlotResolutionResult:
 "1,000,000 USD"  (thay vì "1,000,000 / USD")
 ```
 
-#### 4.4.2 P2 — Type-Tab Filter
+#### 4.4.2 P2 — Type-Tab Filter (cập nhật 2026-09-13)
 
-Khi classifier trả về `type_tab_hint='PHI-CANHAN'` với `confidence ≥ 0.80`, filter được áp dụng tại Phase 2 BM25 + Vector trước khi retrieve:
+Khi classifier trả `type_tab_hint` (vd `'PHI'`) kèm `confidence` đủ cao, filter được áp tại Phase 2 trước khi retrieve. Cơ chế gồm **hai cổng hai tầng, không hợp nhất**:
+
+- **Cổng ý định (`_gate_hint`, Phase 3, Guard 3 của `generation_orchestrator`)** hỏi *"bộ nhận dạng có đủ chắc về Ý ĐỊNH không?"* — đọc `tabular.type_tab_filter.{enabled, min_confidence}`. Đây là van an toàn cho các rule ngầm confidence thấp (R2.5/R2.6/R2.7 = 0.70–0.75); các rule phát hint nhóm khách hàng đều conf ≥ 0.80 nên không bị chặn. *(Lưu ý: hai khoá config này từng là **tham số chết** — không dòng Python nào đọc — nay đã được nối vào `_gate_hint`.)*
+- **Bộ giải (`shared/type_tab_resolver`, Phase 2)** hỏi *"nhóm ấy có THẬT không?"* — chuẩn hoá khoá (hoa hoá + bỏ ký tự không phải chữ-số) nên `LAI_SUAT ≡ LAISUAT ≡ lai-suat` là một; bộ lọc xuống SQL nay là **`TYPE_TAB IN (…)`** (từ 2026-09-13) thay vì `LIKE` mong manh trước đây.
 
 ```sql
 SELECT ... FROM TABULAR_DATA
-WHERE TYPE_TAB = 'PHI'
-  AND FT5 = 'KHCN'              -- example: filter type_tab_hint
+WHERE TYPE_TAB IN ('PHI')       -- resolver chuẩn hoá + IN, không còn LIKE
   ...
 ```
 
-→ Search space giảm đáng kể, độ chính xác tăng.
+> **Ba regex nhóm khách hàng (DCTC > TOCHUC > CANHAN) đã bị GỠ (2026-09-13).** Đo trên toàn bộ 6 câu mang nhãn nhóm: bỏ hard-filter theo nhóm khách hàng **tốt hơn ở mọi trục** (`recall@5` 0.667→1.000, MRR tăng). Hint nhóm khách hàng vẫn được trích nhưng **không** dùng để hard-filter — để rerank quyết. Đây là ca "bỏ một cổng lọc cứng cho kết quả tốt hơn", đã đo chứ không đoán.
 
 #### 4.4.3 P3 — Query Analyzer
 
@@ -1580,16 +1610,13 @@ retrieval:
   enable_mmr: true
   enable_rerank: true
 
-# ── Query Rewriting ─────────────────────────────────────────────
-query_rewriting:
-  enabled: true
-  num_variants: 3                  # ngoài câu gốc → tổng 4 queries
-  rrf_k: 60
-  llm_timeout_seconds: 8
-  variant_strategy: hybrid         # KHÔNG dùng adaptive
-
-hyde:
-  enabled: false                   # chỉ bật khi strategy="vector"
+# ── Query Rewriting + HyDE — ĐÃ GỠ (2026-09-12) ─────────────────
+# `query_rewriting:` và `hyde:` (cùng QueryRewriter/HyDERewriter) đã được XOÁ:
+# chỉ đường legacy (LegalGenerationHandler._retrieve*) chạm tới, còn unified nhận
+# pre_retrieved_results và agent-path gọi thẳng retrieve() ⇒ không đường nào đang
+# chạy gọi chúng (code chết). Lý do tắt ban đầu (llama-cpp không thread-safe, 2026-05)
+# không áp dụng cho Gemini; chưa từng có phép đo bật/tắt. Cột `t_rewrite_done_ms`
+# trong metrics.db giữ lại (LUÔN NULL) để tương thích nền đo cũ.
 
 # ── Slot Detection Pipeline ─────────────────────────────────────
 slot_detection:
@@ -1622,7 +1649,7 @@ unified_dispatch:
 # ── Tabular Pipeline ─────────────────────────────────────────────
 tabular:
   field_aware_prompt: { enabled: true }
-  type_tab_filter: { enabled: true, min_confidence: 0.80 }
+  type_tab_filter: { enabled: true, min_confidence: 0.80 }  # cổng ý định _gate_hint (§4.4.2)
   query_analyzer:
     enabled: true
     numeric_boost: 0.15
@@ -1697,11 +1724,13 @@ Gemini 2.5 Flash có context window 1M token, có thể nhận 8000 tokens conte
 
 Cross-encoder reranking cải thiện đáng kể chất lượng kết quả retrieval cho tiếng Việt với model multilingual `mmarco-mMiniLMv2-L12-H384-v1`. Chi phí latency (~150–300ms) được bù đắp bởi chất lượng câu trả lời tốt hơn — nhân viên tin tưởng kết quả hơn, ít phải tra cứu lại.
 
-### 5.8 Tại sao multi-query variants phải dùng `variant_strategy: hybrid` thay vì `adaptive`?
+### 5.8 Multi-query variants & `variant_strategy: hybrid` — *(lịch sử; query_rewriting đã gỡ 2026-09-12)*
+
+> **Mục này mô tả cơ chế đã được GỠ.** `QueryRewriter`/`HyDERewriter` (multi-query + RRF) bị xoá 2026-09-12 vì là code chết (chỉ đường legacy gọi tới). Giữ lại phần giải thích dưới đây làm ghi chép thiết kế — không còn hiệu lực trong pipeline đang chạy.
 
 Adaptive router dùng rule-based matching: nếu query chứa `\d+/\d{4}/[A-Z]` (pattern số văn bản), router chọn `keyword` strategy. Khi LLM sinh biến thể (variant), variant "Dùng thuật ngữ pháp lý chuyên ngành" thường chứa tham chiếu như `"Nghị định 13/2023/NĐ-CP"` → adaptive sai → BM25 nhận câu dài tiếng Việt → tokenizer trả về empty → warning `"Query tokenized to empty"`.
 
-**Fix:** Pin variant strategy = `hybrid` (cho variant index ≥ 1); câu gốc (index 0) giữ nguyên strategy người dùng chọn.
+**Fix (khi còn dùng):** Pin variant strategy = `hybrid` (cho variant index ≥ 1); câu gốc (index 0) giữ nguyên strategy người dùng chọn.
 
 ### 5.9 Tại sao Tabular pipeline không có slot detection?
 

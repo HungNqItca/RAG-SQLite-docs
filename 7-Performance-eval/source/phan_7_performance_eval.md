@@ -102,6 +102,8 @@ performance_evaluation/          (sibling của rag-core/)
 
 Mỗi query ghi tối đa 10 timestamp bằng `time.perf_counter()` (độ phân giải microsecond). Chuỗi mốc chia hai giai đoạn tự nhiên: tiền-LLM (từ start tới retrieval) và LLM (từ dựng prompt tới stream xong).
 
+> **Hai cập nhật quan trọng (2026-09):** (1) Mốc `t_rewrite_done` giờ **LUÔN NULL** — `query_rewriting` đã được gỡ 2026-09-12 (Phần 2 §5.8), cột vẫn giữ trong `metrics.db` để tương thích nền đo cũ. (2) Nhánh **`agentic` chỉ có dòng metric từ 2026-09-11** — trước đó nhánh agent `return` mà không ghi, nên mọi câu đi agent **vô hình** với mọi chỉ số (0/8.254 dòng trên `metrics.db`); **mọi nền đo trước 2026-09-11 đo trên tập câu khác (thiếu câu agent), đừng so trực tiếp.**
+
 ![Hình 7.2a — Timestamp giai đoạn tiền-LLM](../png/hinh_7_2a_timestamps_pre_llm.png)
 
 *Hình 7.2a — Năm mốc đầu: t_start → classification → slot_detection (chỉ legal) → condense (chỉ tabular) → rewrite (tùy chọn) → retrieval. Hai mốc slot/condense loại trừ nhau theo nhánh nội dung. → tiếp Hình 7.2b.*
