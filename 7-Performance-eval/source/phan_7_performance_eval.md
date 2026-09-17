@@ -353,6 +353,34 @@ Rút từ chính lịch sử dự án (Phần 6 §16.2 mô tả cùng bộ quy t
 
 Mọi gate eval chạy **≥3 vòng** vì `temperature=0.1` không seed (phi tất định). Báo cáo **per-group**, không chỉ aggregate; gate phải đi kèm metric bù để tránh "xanh nhờ gaming"; phân biệt **structural zero** (cấu trúc không thể khác 0) với **observed zero** (đo được 0).
 
+### 9.6 Đo LỚP LỖI agent-path — `do_lop_loi_agent.py` (2026-09-16)
+
+Công cụ này trả lời câu hỏi *"bốn lớp lỗi agent-path xảy ra **bao nhiêu** trên một TẬP câu hỏi"* — đo trên tập, không trên một ca (thiết kế các bản vá → Phần 6 §16.4). Tập câu **cố định, không chọn theo kết quả**: `agentic_eval_corpus` (41) + `G8_hon_hop` (20) + `G8_sotay_agent` (30) + `G10_agent_phuluc` (6) + `CA_BO_SUNG` (câu UAT phí + câu sự cố) = **99 câu**, chạy **2 lượt/nhánh** qua `:8001` (tái dùng `_post_sse`/`_parse_sse` của `run_agentic_responses.py`, không chép).
+
+Chỉ số theo dòng: `stopped_reason`, `compute_calls` (kèm `type_tab`), `fee_guard` (kèm `compute_match`), `lech_dong`, `con_trong_than`, `co_dong_nhan_react`, `ms`. Hai bài học đo tinh tế:
+
+- 🔴 **`con_trich_dan_chua_kiem` (đếm khối ⚠️) KHÔNG đo được hiệu quả lược bỏ** — vì khối ⚠️ vẫn được nối SAU khi lược. Thước đúng là **`con_trong_than`**: mọi thành phần của một nhãn ⚠️ (số hiệu VB, "Điều N") còn cùng nằm trên một dòng của **thân** câu trả lời. Bản đầu đếm khối ⚠️ cho "16 → 18" (tưởng không cải thiện), trong khi thân thật đã `15 → 3`. Bài học: đo đúng **vị trí** của lỗi, không đo cái đại diện thuận tiện.
+- ⚠️ **`lech_dong` có dương tính giả**: đếm cả `CALC_FEE` bị từ chối và dòng LLM tính rồi cố ý không dùng. Nhánh tác tử không dán nhãn `cited` lên thẻ nguồn ⇒ vắng khoá = coi như được trích.
+
+Chẩn đoán vết tool phải chạy **ngoài tiến trình** (dựng `GenerationOrchestrator` rồi bọc `registry.dispatch` để in tham số từng lời gọi) vì **log service không ghi tham số tool** — một khoảng mù của quan sát tại chỗ.
+
+### 9.7 Hai dụng cụ đo nền — `kiem_do_phu.py` và `san_nhieu.py` (2026-09-12)
+
+Hai công cụ này biến hai bài học của phiên nền đo thành **cơ chế** thay vì kỷ luật thủ công.
+
+**`kiem_do_phu.py` — cổng ĐỘ PHỦ.** Nguyên lý: *một lượt thiếu câu không phải "lượt hơi kém" mà là phép đo trên một corpus KHÁC.* Ba khiếm khuyết từng làm mất dòng đo trong im lặng (agent-path không ghi, retry bỏ lỗi đứt kết nối, client timeout = trần agent) mà **không cổng nào bắt** lúc đang xảy ra. Bốn bất biến của cổng:
+
+| # | Bất biến | Vì sao cần |
+|:-:|---|---|
+| 1 | Mọi câu trong roster của lượt có dòng `is_warmup=0` | Nêu **đích danh** câu thiếu, không chỉ đếm |
+| 1b | Lượt **không** đo nhóm ngoài kỳ vọng | Chiều ngược của (1): một lượt 190 câu chấm bằng kỳ vọng 160 sẽ XANH trong khi đo corpus KHÁC |
+| 2 | Không query nào **toàn** warm-up | Hình dạng của lỗ agent-path: câu "có mặt" mà không dòng nào được chấm |
+| 3 | Số dòng `agentic` **==** số lần `→ AGENT` trong log | Không phải "có ít nhất một dòng agentic" — số câu đi agent đổi từng lượt, `0` là hợp lệ |
+
+> 🔴 **Nguồn kỳ vọng — bài học 2026-09-13:** bảng `corpus` bị hỏi **hai câu hỏi khác loại**. *"Câu X chấm thế nào?"* là câu hỏi **theo CÂU** (bản mới nhất thắng — `corpus` đúng, vì nó dùng `INSERT OR REPLACE`). *"Lượt R đáng lẽ đo những câu nào?"* là câu hỏi **theo LƯỢT** — cần bảng **`run_corpus` mới** (có chiều `run_id`), vì `corpus` không có chiều đó. Dùng nhầm một bảng cho cả hai câu hỏi là nguồn của cả một lớp lỗi đo độ phủ.
+
+**`san_nhieu.py` — sàn nhiễu.** Một cổng "không tụt" mà **không có sàn nhiễu** là cổng không đọc được: với hệ phi tất định (`temperature≠0`), một khác biệt nhỏ giữa hai lượt có thể chỉ là nhiễu. Công cụ đo lại sàn nhiễu (ví dụ ≈1 câu/30 trên corpus general) để mọi tuyên bố cải thiện phải **vượt sàn nhiễu** mới được coi là tín hiệu thật — nếu không, "cải thiện" chỉ là dao động ngẫu nhiên.
+
 ---
 
 ## 10. Bộ eval Agentic (`agentic_eval/`)

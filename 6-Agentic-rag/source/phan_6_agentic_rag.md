@@ -620,6 +620,13 @@ Một nguồn nhầm lẫn lớn khi đọc code: nhiều cờ có **mặc đị
 | `general_dispatch.enabled` | `false` | **`true`** | Luồng general vào pool unified + gác đăng ký tool `search_general` |
 | `general_dispatch.blend_into_legal` | `false` | `false` | **Đã lật hai lần** — bật 2026-09-01, lùi 2026-09-02 (§15) |
 | `general.citation_hygiene` | — | `shadow` | Chỉ đếm + ghi log, không sửa answer |
+| `agent.compute_row_select.enabled` | `false` | **`true`** | §16.5 L1 — compute tính trên đúng dòng LLM chỉ (`tabular_<n>#k`); observation đánh số + `type_tab` |
+| `agent.fee_guard.compute_match` | `"off"` | **`"shadow"`** | §16.5 L1′ — số phí phải do CALC_FEE trả. Giữ `shadow` vì báo nhầm khi câu trả lời trình bày bảng phí. Phải có ngoặc kép (YAML đọc `off` trần thành `False`) |
+| `agent.parser.lenient_final` | `false` | **`true`** | §16.5 L2 — văn xuôi không nhãn ReAct ⇒ coi là final; JSON hợp lệ + văn thừa ⇒ lấy object đầu |
+| `agent.citation_guard.early_stop.mode` · `repair_mode` | `annotate`, `fresh` | **`continue`, `resume`** | §16.5 L3 — dừng sớm/còn trích dẫn sai ⇒ NỐI TIẾP bản nháp (≤3 vòng/20s), không chạy lại từ đầu |
+| `agent.citation_guard.strip_unverified` · `verify_doc_only` · `doc_ref_by_position` | `false` | **`true`** | §16.5 L3 — lược câu chưa kiểm chứng; xác minh trích dẫn chỉ-số-hiệu; gắn VB theo vị trí |
+| `agent.search_legal.domain_filter` | `"hard"` | **`"off"`** | §16.5 L5 — bỏ `domain` do LLM đoán (từng loại nhầm TT50/CNTT khi LLM truyền `TT`) |
+| `warmup.lazy_retrievers` | `false` | **`true`** | §16.5 L4 — lifespan chạy MỘT truy vấn thật qua làn tabular/general trước khi nhận request |
 | `query_rewriting` · `hyde` | — | **ĐÃ GỠ (2026-09-12)** | Code chết: chỉ đường legacy gọi tới, unified/agentic không dùng. Xoá cả 2 khoá + `QueryRewriter`/`HyDERewriter` (Phần 2 §5.8) |
 | `contextual_condensation.enabled` | `true` | `true` | Tầng C hoạt động |
 
@@ -898,6 +905,25 @@ Bộ eval A–F có 4 nhóm N1–N4 (§8). Các giai đoạn sau bổ sung:
 - **Feedback → eval (Stage J1):** pipeline gom câu trả lời bị đánh giá xấu từ log thật thành ứng viên bổ sung corpus.
 
 Kỷ luật đo chung: mọi gate chạy **≥3 vòng** vì `temperature=0.1` không seed (phi tất định); báo cáo **per-group**, không chỉ aggregate; gate phải đi kèm metric bù để tránh "xanh nhờ gaming".
+
+### 16.4 Sửa agent-path theo LỚP lỗi (giai đoạn 16–17/9/2026)
+
+Phân tích log 2.008 lượt agent (11/6–16/9) cho thấy **151 lượt dừng sớm** (46 lỗi parse · 25 hết giờ · 80 hết vòng). Thay vì vá từng ca, phương pháp là **phân loại thành các LỚP lỗi và sửa cơ chế** cho mỗi lớp — mọi cờ mặc định TẮT trong code, chỉ bật trong YAML **sau khi đo** (nguyên tắc shadow-trước-enforce, §10.2). Ca kích hoạt điển hình: *"Nộp thuế 100 triệu qua KBNN, phí bao nhiêu, và xác nhận bằng phương thức nào?"* — LLM tự nhân phí (sai dòng) và vế pháp lý dẫn "Thông tư 39/2014" không có trong kho.
+
+| Lớp | Cơ chế hỏng | Bản vá | Cờ |
+|:-:|---|---|---|
+| **L1** | `compute` tính trên dòng hạng 1 (không phải dòng LLM chỉ); observation thiếu số thứ tự và `type_tab`; `code_tab` trùng giữa các nhóm | Tham chiếu dòng `tabular_<n>#k`, observation đánh số, compute nêu rõ dòng đã tính | `compute_row_select` |
+| **L1′** | FeeGuard chỉ hỏi "số có tồn tại không", không hỏi "số này có do CALC_FEE trả không" | Trục `compute_match` (giữ `shadow` vì báo nhầm khi trả lời trình bày bảng phí) | `fee_guard.compute_match` |
+| **L2** | Lượt sai khuôn ReAct không để lại nội dung; đo được 67/72 lượt lỗi là **văn xuôi không nhãn** | Log nội dung lượt + `lenient_final` (văn xuôi không nhãn ⇒ coi là Final Answer) | `parser.lenient_final` |
+| **L3** | Dừng sớm hoặc sửa-từ-đầu ⇒ LLM bịa căn cứ; guard chỉ gắn nhãn ⚠️ chứ không sửa | Ghi chú loại căn cứ đã/chưa có, **nối tiếp** bản nháp (không chạy lại), tự tra căn cứ thiếu, lược câu chưa kiểm chứng, `verify_doc_only`, `doc_ref_by_position` | `citation_guard.early_stop`, `repair_mode: resume`, `strip_unverified` |
+| **L4** | Làn tabular/general khởi tạo lười ⇒ lần gọi nguội đầu tiên mất 117 giây | `_warm_lazy_retrievers` — lifespan chạy một truy vấn thật qua mỗi làn trước khi nhận request | `warmup.lazy_retrievers` |
+| **L5** | LLM tự đoán `domain` ⇒ lọc cứng loại nhầm văn bản đúng (truyền `domain="TT"` khi TT50/2024 thuộc domain CNTT) | Bỏ lọc cứng theo domain LLM đoán — truy hồi tự thân không hỏng, để rerank quyết | `search_legal.domain_filter: off` |
+
+> **L5 lặp lại đúng bài học ở luồng bảng (§12, và Phần 2 §4.4.2):** lọc cứng theo một trường do LLM/heuristic đoán thường loại nhầm ứng viên đúng trước khi rerank kịp cân nhắc. Vết tool thật (chạy agent ngoài tiến trình, bọc `registry.dispatch` để in tham số từng lời gọi — vì log service **không** ghi tham số tool): `search_legal(query="...", domain="TT")` trả 2 rồi 0 kết quả, trong khi truy vấn không kèm domain cho TT50 đúng ở top 1–3 sau rerank.
+
+**Kết quả đo** (`do_lop_loi_agent.py`, 99 câu × 2 lượt — xem Phần 7 §9.6): thân câu trả lời còn trích dẫn chưa kiểm chứng giảm từ **15·18 → 0·1**; số lượt dừng sớm từ **8·9 → 2·1**; lỗi parse (log) từ **72 → 2–3**; độ trễ agent p50 từ 20–23s xuống 18–20s.
+
+> 🔴 **Giới hạn gốc còn nguyên:** CitationGuard **không kiểm nghĩa** — nội dung bịa mà không kèm trích dẫn thì không bị thấy. "Có TT50 trong thân câu trả lời" ≠ "trả lời đúng". Đây là ranh giới có chủ đích của kỷ luật trích dẫn (chặn được trích dẫn không tồn tại, không chặn được diễn giải sai của một trích dẫn có thật) — cần con người review cho tầng ngữ nghĩa.
 
 ---
 
