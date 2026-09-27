@@ -521,9 +521,9 @@ def main():
 
     # Optional --title and --subtitle
     title = "TÀI LIỆU THIẾT KẾ HỆ THỐNG"
-    subtitle = "RAG-CHATBOT NỘI BỘ"
+    subtitle = "RAG-CHATBOT"
     version = "1.0"
-    date = "Tháng 5/2026"
+    date = "Tháng 10/2026"
     cover = True
 
     args = sys.argv[3:]

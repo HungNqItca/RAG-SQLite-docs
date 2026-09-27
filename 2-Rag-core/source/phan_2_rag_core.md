@@ -213,7 +213,9 @@ chunk = {
 
 Tách `text` (đã normalize) và `original_text` là quyết định quan trọng: BM25 và embedding cần text đã lowercase + chuẩn hoá Unicode để cải thiện matching, nhưng khi hiển thị câu trả lời cho người dùng, phải dùng đúng từ ngữ gốc của văn bản pháp lý. Hai cột tách biệt giúp giải quyết vấn đề này mà không cần normalize lại runtime.
 
-**Bước 5 — Embedding model:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (~420 MB, hỗ trợ tiếng Việt). Lần đầu tải xuống từ HuggingFace; lần sau dùng cache local. Có thể trỏ sang model đã download trước qua `EMBEDDING_LOCAL_MODEL_PATH` để tránh phụ thuộc Internet khi setup máy mới.
+**Bước 5 — Embedding model:** `BAAI/bge-m3` (~2,2 GB, 1024 chiều, đa ngôn ngữ, dùng từ 2026-09-09). Model MiniLM cũ (`paraphrase-multilingual-MiniLM-L12-v2`, 384 chiều, ~490 MB) được giữ làm **đường lùi**. Lần đầu tải xuống từ HuggingFace; lần sau dùng cache local. Có thể trỏ sang model đã download trước qua `EMBEDDING_LOCAL_MODEL_PATH` để tránh phụ thuộc Internet khi setup máy mới.
+
+> **Bug đã fix khi đổi MiniLM → bge-m3 (2026-09-09): số chiều vector không tương thích.** *Triệu chứng:* Chroma báo lỗi khi truy vấn, hoặc kết quả sai âm thầm. *Nguyên nhân:* bge-m3 cho vector **1024 chiều** trong khi MiniLM là **384 chiều** — không thể upsert đè lên kho vector cũ. *Cách fix:* đổi model **phải dựng lại CẢ BA kho vector** (legal ChromaDB, general ChromaDB, tabular BLOB); bỏ bước này thì kho giữ vector 1024 trong khi truy vấn ra 384 (hoặc ngược lại) → Chroma từ chối hoặc cosine similarity vô nghĩa. Một biến thể đã gặp ở luồng tabular: nhúng lẫn 384 và 1024 trong cùng kho (666 dòng còn 384, 314 dòng đã 1024) — ChromaDB ghim số chiều của collection nên chèn sai bị từ chối "ồn ào" (phát hiện được), nhưng nếu tự quản vector như tabular BLOB thì phải kiểm số chiều thủ công.
 
 #### 2.2.5 Bước 6 — Xây BM25 index (tuỳ chọn)
 
@@ -494,7 +496,7 @@ CREATE TABLE chunk_term_frequencies (
 | Document text | `clause_content` (đã normalize) |
 | Metadata | `{document_id, chunk_id, article_number, article_title, clause_number, domain, chunk_index, document_title}` |
 | Persist dir | `data/chromadb/` |
-| Embedding model | `paraphrase-multilingual-MiniLM-L12-v2` (384-dim) |
+| Embedding model | `BAAI/bge-m3` (1024-dim, từ 2026-09-09; MiniLM 384-dim làm đường lùi) |
 
 ### 2.5 CLI và operations
 
@@ -599,7 +601,7 @@ Bốn chiến lược retrieval đại diện cho ba điểm cân bằng giữa 
 
 - **Class:** `VectorRetriever`
 - **Backend:** ChromaDB collection `legal_clauses`
-- **Model:** `paraphrase-multilingual-MiniLM-L12-v2`
+- **Model:** `BAAI/bge-m3` (1024 chiều; MiniLM 384 chiều làm đường lùi)
 
 Quy trình:
 1. Embed câu truy vấn bằng SentenceTransformer.
@@ -633,7 +635,7 @@ Quy trình:
 - **Class:** `HybridRetriever`
 - **Cấp độ:** Gọi cả `VectorRetriever` lẫn `BM25Retriever`, hợp nhất bằng RRF hoặc weighted fusion.
 
-**Tinh tế quan trọng:** `HybridRetriever` nhận **shared instances** của `VectorRetriever` và `BM25Retriever` từ `RetrievalOrchestrator` thay vì tự tạo mới. Điều này tránh load embedding model hai lần (~420 MB lần) — quan trọng với máy chủ CPU-only RAM hạn chế.
+**Tinh tế quan trọng:** `HybridRetriever` nhận **shared instances** của `VectorRetriever` và `BM25Retriever` từ `RetrievalOrchestrator` thay vì tự tạo mới. Điều này tránh load embedding model hai lần (~2,2 GB mỗi lần với bge-m3) — quan trọng với máy chủ CPU-only RAM hạn chế.
 
 Số lượng candidates per sub-retriever:
 ```
@@ -826,7 +828,7 @@ def _init_tabular_retrievers(self):
 
 **Vì sao double-checked lock?** Trong môi trường multi-threaded (FastAPI uvicorn workers), nhiều request tabular đến cùng lúc có thể cùng vào `_init_*()` → race condition khởi tạo 2 lần = lãng phí RAM cho 2 bản matrix. Lock giải quyết, nhưng `lock.acquire()` mỗi request là overhead → fast path no-lock check trước.
 
-`_get_embedding_fn()` extract embedding function từ `VectorRetriever` đã load (Legal pipeline) — **tránh load model lần thứ hai** (~420 MB).
+`_get_embedding_fn()` extract embedding function từ `VectorRetriever` đã load (Legal pipeline) — **tránh load model lần thứ hai** (~2,2 GB với bge-m3).
 
 #### 3.3.2 Hot-reload signal check
 
@@ -960,8 +962,8 @@ retrieval:
   vector:
     chromadb_path: "../data/chromadb"
     collection_name: "legal_clauses"
-    embedding_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    local_model_path: "models/embeddings/paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_model: "BAAI/bge-m3"                      # 1024 chiều, từ 2026-09-09
+    local_model_path: "models/embeddings/bge-m3"        # MiniLM 384-dim giữ làm đường lùi
     top_k: 20
     similarity_threshold: 0.3       # Hạ từ 0.5 — min_score sau rerank mới quyết định cuối
 
@@ -1335,6 +1337,10 @@ WHERE TYPE_TAB IN ('PHI')       -- resolver chuẩn hoá + IN, không còn LIKE
 ```
 
 > **Ba regex nhóm khách hàng (DCTC > TOCHUC > CANHAN) đã bị GỠ (2026-09-13).** Đo trên toàn bộ 6 câu mang nhãn nhóm: bỏ hard-filter theo nhóm khách hàng **tốt hơn ở mọi trục** (`recall@5` 0.667→1.000, MRR tăng). Hint nhóm khách hàng vẫn được trích nhưng **không** dùng để hard-filter — để rerank quyết. Đây là ca "bỏ một cổng lọc cứng cho kết quả tốt hơn", đã đo chứ không đoán.
+
+> **Cổng tin cậy legal `cong_tin_cay_legal` — ENFORCE từ 24/9/2026 (issue-10).** Trước đây từng thử một **cổng LLM phân loại dispatch** (`dispatch_gate`) để chặn câu ngoài phạm vi, nhưng sau 8 bản prompt / ~4.000 lượt vẫn không đạt → **đã GỠ**. Thay bằng một **cổng ĐIỂM** đơn giản, tất định: nếu điểm truy hồi tốt nhất của nhánh legal thấp hơn ngưỡng `min_score = 0,022` thì chặn (không trả lời bừa). `che_do: enforce` (chặn thật trên fast-path legal); đường lùi tức thời qua biến môi trường `CONG_TIN_CAY_LEGAL_CHE_DO=shadow` mà không cần build lại image. Bài học: một cổng ĐIỂM rẻ, tất định, đo được thắng một cổng LLM đắt, phi tất định, không tinh chỉnh nổi.
+
+> **Tokenizer BM25 luồng tabular đổi `COMPOUND_ONLY → ALL_KHONG_TACH_MA` (24/9/2026, issue-11).** Trước đây luồng tabular vứt các token từ đơn (chỉ giữ từ ghép có dấu cách), làm mất nhiều term tra cứu. Sau khi giữ **mọi token** (không tách mã), từ vựng BM25 tabular tăng từ **276 → 803**. `COMPOUND_ONLY` giữ lại làm **di sản/đường lùi** (sửa một dòng enum để quay lại). Ba luồng vẫn dùng tokenizer riêng — thay đổi này chỉ áp cho tabular, không đụng legal/general.
 
 #### 4.4.3 P3 — Query Analyzer
 

@@ -140,7 +140,7 @@ Bảng dưới đây liệt kê các thư viện chính được dùng ở mỗi
 | `uvicorn` | ≥ 0.29.0 | ASGI server chạy FastAPI. |
 | `pydantic` | ≥ 2.0.0 | Validation toàn bộ schemas trong `shared/schemas.py`. |
 | `chromadb` | ≥ 0.4.22 | Vector DB, dùng ở chế độ embedded (file-based), không cần ChromaDB server. |
-| `sentence-transformers` | ≥ 2.3.1 | Embeddings (`paraphrase-multilingual-MiniLM-L12-v2`) + cross-encoder rerank (`mmarco-mMiniLMv2-L12-H384-v1`). |
+| `sentence-transformers` | ≥ 2.3.1 | Embeddings (`BAAI/bge-m3`, 1024-dim, từ 2026-09-09; MiniLM 384-dim làm đường lùi) + cross-encoder rerank (`mmarco-mMiniLMv2-L12-H384-v1`). |
 | `pymongo` | ≥ 4.6.0 | Driver MongoDB cho `MongoDBManager`. Có retry tenacity. |
 | `python-docx` | ≥ 1.1.0 | Parser `.docx` trong `legal_document_splitter.py`. |
 | `langchain-community` | ≥ 0.0.20 | Loader `.pdf` (`PyPDFLoader`) và `.txt` fallback. Chỉ dùng cho ingest. |
@@ -253,7 +253,7 @@ Triết lý xuyên suốt: **regex giải quyết được thì không dùng LLM
 **Với câu hỏi Legal**, Phase 2 chạy song song:
 
 1. **BM25** (keyword, SQLite) - `BM25Retriever` trên các bảng `chunks`, `bm25_statistics`, `chunk_term_frequencies`. Tokenize tiếng Việt bằng `underthesea`, công thức Okapi BM25 với `k1=1.5`, `b=0.75`.
-2. **Vector** (semantic, ChromaDB) - `VectorRetriever` query collection `legal_clauses` bằng cosine similarity. Embedding model `paraphrase-multilingual-MiniLM-L12-v2` cho ra vector 384 chiều.
+2. **Vector** (semantic, ChromaDB) - `VectorRetriever` query collection `legal_clauses` bằng cosine similarity. Embedding model `BAAI/bge-m3` cho ra vector 1024 chiều (từ 2026-09-09; MiniLM 384 chiều làm đường lùi).
 
 Hai danh sách kết quả được hợp nhất bằng **Reciprocal Rank Fusion** với `k=60`:
 
@@ -730,7 +730,7 @@ Sơ đồ dưới đây cho thấy cách **pipeline Legal và Tabular** chia s�
 | CSDL | Thuộc tầng | Nội dung lưu trữ |
 |---|---|---|
 | **MongoDB** | RAG Core | **Legal only.** Lưu hierarchical structure `Văn bản → Điều → Khoản → Điểm`. Dùng cho Article Expansion (Phase 2) và Tầng B.5 MongoDB direct fetch (Phase 3). |
-| **ChromaDB** (file-based) | RAG Core | **Legal only.** Collection `legal_clauses` chứa vector embeddings (dim 384) của từng chunk. |
+| **ChromaDB** (file-based) | RAG Core | **Legal only.** Collection `legal_clauses` chứa vector embeddings (dim 1024, bge-m3) của từng chunk. |
 | **SQLite: `metadata.db`** | RAG Core | **Cả ba pipeline.** Bảng Legal: `documents`, `chunks`, `bm25_statistics`, `chunk_term_frequencies`, `adaptive_keywords`. Bảng Tabular: `TABULAR_TYPE_REGISTRY`, `TABULAR_FIELD_META`, `TABULAR_DATA`, `tabular_bm25_statistics`, `tabular_term_frequencies`, `tabular_ingestion_log`, `query_classification_log`. Bảng General: `general_documents`, `general_chunks`, `general_bm25_statistics`, `general_term_frequencies`. |
 | **SQLite: `conversations.db`** | RAG Core | LLM context window - **TTL 72h**. Không phải permanent history - khi expire, BFF vẫn có lịch sử để hiển thị. |
 | **SQLite: `users.db`** | BFF | Auth (`users`, `refresh_tokens`), session ownership (`user_sessions`), **permanent chat history** (bảng `conversations`), admin analytics (`chat_activity_log`). |
@@ -776,7 +776,7 @@ chunk = {
 }
 ```
 
-**Lý do chuẩn hoá ở vế embedding:** Mô hình `paraphrase-multilingual-MiniLM-L12-v2` được train với text lowercase. Nếu query không lowercase nhưng corpus đã lowercase → cosine similarity giảm đáng kể.
+**Lý do chuẩn hoá ở vế embedding:** Các mô hình embedding đa ngôn ngữ được train với text đã chuẩn hoá. Nếu query không chuẩn hoá nhưng corpus đã chuẩn hoá → cosine similarity giảm đáng kể. (bge-m3 bớt nhạy với hoa/thường hơn MiniLM, nhưng vẫn giữ chuẩn hoá để nhất quán hai vế.)
 
 ### 10.5 Lịch sử hội thoại 2 lớp
 
@@ -868,7 +868,7 @@ server {
 /data/users.db                  ~ 50–200 MB    (~100 user, history vĩnh viễn)
 /data/metadata.db               ~ 500 MB–2 GB  (~50K chunks + BM25)
 /data/conversations.db          < 100 MB       (TTL 72h)
-/data/chromadb/                 ~ 200 MB–1 GB  (50K × 384-dim float32)
+/data/chromadb/                 ~ 500 MB–2 GB  (50K × 1024-dim float32, bge-m3)
 /data/uploads/                  ~ 1–5 GB       (~500 .docx + .xlsx)
 /models/                        ~ 1 GB         (embedding 420 MB + reranker 490 MB)
 /models/vinallama-7b-chat.gguf  ~ 4.5 GB       (tuỳ chọn fallback)
@@ -894,7 +894,7 @@ Bảng tổng hợp các thuật ngữ kỹ thuật và nghiệp vụ xuất hi�
 |---|---|
 | **RAG** | Retrieval-Augmented Generation - kiến trúc LLM trả lời dựa trên tài liệu đã retrieve, không từ trí nhớ nội tại. |
 | **Chunk** | Đơn vị văn bản nhỏ nhất để lập chỉ mục. Hệ thống này: **1 Khoản = 1 chunk**. |
-| **Embedding** | Vector số thực ~384 chiều biểu diễn ngữ nghĩa của chunk. Sinh bởi `sentence-transformers`. |
+| **Embedding** | Vector số thực 1024 chiều (bge-m3) biểu diễn ngữ nghĩa của chunk. Sinh bởi `sentence-transformers`. |
 | **Vector search** | Tìm kiếm theo độ tương tự cosine giữa query embedding và chunks. Mang nghĩa **ngữ nghĩa**. |
 | **BM25** | Okapi BM25 - xếp hạng keyword dựa trên TF-IDF có saturation. Mang nghĩa **từ khoá**. |
 | **Hybrid retrieval** | Kết hợp Vector + BM25, thường qua RRF. |
